@@ -8,8 +8,13 @@ WndHandle Window_Create(const WindowCreationArgs* Args)
 {
 	WndHandle wnd = malloc(sizeof(*wnd));
 	memset(wnd, 0, sizeof(*wnd));
+
 	wnd->_menus = malloc(sizeof(*wnd->_menus));
 	memset(wnd->_menus, 0, sizeof(*wnd->_menus));
+
+	wnd->_items = malloc(sizeof(*wnd->_items));
+	memset(wnd->_items, 0, sizeof(*wnd->_items));
+
 	wnd->_args = *Args;
 	wnd->_data = _Window_Create_Impl(Args);
 
@@ -20,31 +25,23 @@ WndHandle Window_Create(const WindowCreationArgs* Args)
 
 	_Window_list.tail = wnd;
 	_Window_list.count++;
+
+	if (wnd->_args.on_wndmsg)
+		wnd->_args.on_wndmsg(wnd, WndMsg_Created);
+
 	return wnd;
 }
 
-int Window_RunAll()
-{
-	unsigned int living = 0;
-
-	do
-	{
-		for (WndHandle next = 0; next = _Window_list_Next(next);)
-			if (_Window_Run(next))
-				living++;
-	} while (living > 0);
-}
-
-MenuItem* Window_Menu_Add(WndHandle Wnd, const char* Name, MenuCallback* Callback)
+MenuItem* Window_Menu_Add(WndHandle Wnd, const char* Name)
 {
 	MenuItem* item = malloc(sizeof(*item));
 	memset(item, 0, sizeof(*item));
-	item->szname = Name, item->callback = Callback;
+	item->sztext = Name, item->wnd = Wnd;
 
 	MenuList* list = Wnd->_menus;
 
 	if (list->count)
-		list->tail->next = item;
+		list->tail->_next = item;
 	else
 		list->head = item;
 
@@ -55,26 +52,26 @@ MenuItem* Window_Menu_Add(WndHandle Wnd, const char* Name, MenuCallback* Callbac
 	return item;
 }
 
-MenuItem* Window_Menu_Add_Child(WndHandle Wnd, MenuItem* Parent, const char* Name, MenuCallback* Callback)
+MenuItem* Window_Menu_Add_Child(WndHandle Wnd, MenuItem* Parent, const char* Name)
 {
 	MenuItem* item = malloc(sizeof(*item));
 	memset(item, 0, sizeof(*item));
-	item->parent = Parent, item->szname = Name, item->callback = Callback;
+	item->wnd = Wnd, item->_parent = Parent, item->sztext = Name;
 
-	if (!Parent->children)
+	if (!Parent->_children)
 	{
-		size_t size = sizeof(*Parent->children);
-		Parent->children = malloc(size);
-		memset(Parent->children, 0, size);
+		size_t size = sizeof(*Parent->_children);
+		Parent->_children = malloc(size);
+		memset(Parent->_children, 0, size);
 	}
 
-	if (Parent->children->count)
-		Parent->children->tail->next = item;
+	if (Parent->_children->count)
+		Parent->_children->tail->_next = item;
 	else
-		Parent->children->head = item;
+		Parent->_children->head = item;
 
-	Parent->children->tail = item;
-	Parent->children->count++;
+	Parent->_children->tail = item;
+	Parent->_children->count++;
 	_Window_Menu_Add_Child_Impl(Wnd, Parent, item);
 
 	return item;
@@ -91,16 +88,79 @@ MenuItem* _Window_Menu_Next(WndHandle Wnd, MenuItem* Item)
 {
 	if (!Item)
 		return Wnd->_menus->head;
-	return Item->next;
+	return Item->_next;
 }
 
 MenuItem* _Window_Menu_Child_Next(MenuItem* Parent, MenuItem* Item)
 {
 	if (!Item)
 	{
-		if (Parent->children)
-			return Parent->children->head;
+		if (Parent->_children)
+			return Parent->_children->head;
 		return 0;
 	}
-	return Item->next;
+	return Item->_next;
+}
+
+WndItem* Window_Items_Next(WndHandle Wnd, WndItem* Item)
+{
+	if (!Item)
+		return Wnd->_items->head;
+	return Item->_next;
+}
+
+WndItem* Window_Item_Add(WndHandle Wnd, int Type, int X, int Y, int W, int H, UniChar* sztext)
+{
+	WndItem* item = malloc(sizeof(*item));
+	memset(item, 0, sizeof(*item));
+
+	item->wnd = Wnd, item->type = Type, item->sztext = sztext;
+	item->x = X, item->y = Y, item->width = W, item->height = H;
+
+	if (Wnd->_items->count)
+		Wnd->_items->tail->_next = item;
+	else
+		Wnd->_items->head = item;
+
+	Wnd->_items->tail = item;
+	Wnd->_items->count++;
+	_Window_Item_Add_Impl(item);
+
+	return item;
+}
+
+void Window_Item_SetText(WndItem* Item, UniChar* szText)
+{
+	Item->sztext = szText;
+	_Window_Item_UpdateText_Impl(Item);
+}
+
+void Window_IntBox_SetRange(WndItem* IntBox, int Min, int Max)
+{
+	int minmax[2] = { Min, Max };
+	_Window_IntBox_GetSetRange_Impl(IntBox, 0, minmax);
+}
+
+void Window_IntBox_GetRange(WndItem* IntBox, int* outMin, int* outMax)
+{
+	int minmax[2] = { 0 };
+	if (_Window_IntBox_GetSetRange_Impl(IntBox, minmax, 0))
+		*outMin = minmax[0], * outMax = minmax[1];
+}
+
+BitmapHandle Bitmap_Create(unsigned int Width, unsigned int Height)
+{
+	BitmapData* data = malloc(sizeof(*data));
+	memset(data, 0, sizeof(*data));
+	data->width = Width, data->height = Height;
+
+	_Bitmap_Create_Impl(data);
+
+	return data;
+}
+
+void Bitmap_Destroy(BitmapHandle Bmp)
+{
+	_Bitmap_Destroy_Impl(Bmp->_data);
+	free(Bmp);
 }

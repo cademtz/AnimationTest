@@ -27,9 +27,29 @@ struct _OSBitmapImpl
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 LPTSTR NativeString(const UniChar* Unicode);
 void NativeCleanup(LPTSTR Text);
+const char* UTF8String(const LPTSTR* Text);
+void UTF8Cleanup(const char* Text);
 MenuItem* Menu_FindId(WndHandle Wnd, void* Id);
 WndItem* Item_FindId(WndHandle Wnd, void* Id);
 void InitBackbuf(OSData* Data);
+
+char OpenDialog(int DialogType, UniChar* Text)
+{
+	UINT type = MB_OK;
+	switch (DialogType)
+	{
+	case DialogType_Error:
+		type |= MB_ICONERROR; break;
+	case DialogType_Warning:
+		type |= MB_ICONWARNING; break;
+	case DialogType_YesNo:
+		type = MB_YESNO; break;
+	}
+	LPTSTR bruh = NativeString(Text);
+	int result = MessageBoxW(0, bruh, TEXT("Message"), type);
+	NativeCleanup(bruh);
+	return result == IDYES;
+}
 
 OSData* _Window_Create_Impl(WndHandle Data)
 {
@@ -145,6 +165,9 @@ void Window_Item_SetValuei(WndItem* Item, int Value)
 	case ItemType_IntBox:
 		SendMessage(hWnd, UDM_SETPOS32, 0, Value);
 		break;
+	case ItemType_CheckBox:
+		SendMessage(hWnd, BM_SETCHECK, Value ? BST_CHECKED : BST_UNCHECKED, 0);
+		break;
 	}
 }
 
@@ -154,6 +177,8 @@ void Window_Item_SetValuef(WndItem* Item, float Value)
 	switch (Item->type)
 	{
 	case ItemType_IntBox:
+		return Window_Item_SetValuei(Item, Value);
+	case ItemType_CheckBox:
 		return Window_Item_SetValuei(Item, Value);
 	}
 }
@@ -166,6 +191,8 @@ int Window_Item_GetValuei(WndItem* Item)
 	{
 	case ItemType_IntBox:
 		return (int)SendMessage(hWnd, UDM_GETPOS32, 0, &b);
+	case ItemType_CheckBox:
+		return (int)SendMessage(hWnd, BM_GETCHECK, 0, 0);
 	}
 	return 0;
 }
@@ -176,6 +203,8 @@ float Window_Item_GetValuef(WndItem* Item)
 	switch (Item->type)
 	{
 	case ItemType_IntBox:
+		return Window_Item_GetValuei(Item);
+	case ItemType_CheckBox:
 		return Window_Item_GetValuei(Item);
 	}
 	return 0.0f;
@@ -269,6 +298,8 @@ int _Window_Item_Add_Impl(WndItem* Item)
 
 	switch (Item->type)
 	{
+	case ItemType_CheckBox:
+		style |= BS_AUTOCHECKBOX;
 	case ItemType_Button:
 		sztype = WC_BUTTON; break;
 	case ItemType_Label:
@@ -276,7 +307,7 @@ int _Window_Item_Add_Impl(WndItem* Item)
 	case ItemType_IntBox:
 		sztype = UPDOWN_CLASS;
 		style |= UDS_SETBUDDYINT | UDS_AUTOBUDDY | UDS_ALIGNLEFT | UDS_ARROWKEYS | UDS_WRAP;
-		HWND edit = CreateWindow(WC_EDIT, TEXT("UDSBuddy"), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
+		HWND edit = CreateWindow(WC_EDIT, TEXT("UDBuddy"), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
 			Item->x, Item->y, Item->width, Item->height, hParent, 0, hInst, 0);
 		SendMessage(edit, WM_SETFONT, font_best, MAKELPARAM(TRUE, 0));
 		break;
@@ -350,18 +381,20 @@ int _Bitmap_Destroy_Impl(OSBitmap* osData)
 	return 0;
 }
 
-void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, unsigned int Color)
+void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, int Width, unsigned int Color)
 {
+	HPEN pen = CreatePen(PS_SOLID, Width < 1 ? 1 : Width, Color);
+
 	HDC dcBmp = CreateCompatibleDC(0);
 	SelectObject(dcBmp, Bmp->_data->hBmp);
 
-	SetDCPenColor(dcBmp, Color);
-	SelectObject(dcBmp, GetStockObject(DC_PEN));
+	SelectObject(dcBmp, pen);
 
 	MoveToEx(dcBmp, X1, Y1, 0);
 	LineTo(dcBmp, X2, Y2);
 
 	DeleteDC(dcBmp);
+	DeleteObject(pen);
 }
 
 void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int W, int H, unsigned int Color)
@@ -462,6 +495,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 						key = Key_Ctrl; break;
 					case VK_MENU: // Alt key
 						key = Key_Alt; break;
+					case VK_SPACE:
+						key = Key_Space; break;
 					default:
 						key = -1;
 					}
@@ -479,11 +514,40 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			}
 			else // Control-defined notification code (Anything but 0 and 1)
 			{
-				WndItem* item = Item_FindId(wnd, (DWORD)lParam);
-				if (item && wnd->_args.on_itemmsg)
+				HWND hItem = (HWND)lParam;
+				WndItem* item = Item_FindId(wnd, hItem);
+				switch (HIWORD(wParam))
 				{
-					ItemMsgData data = { 0 };
-					wnd->_args.on_itemmsg(item, ItemMsg_Clicked, &data);
+				case BN_CLICKED:
+					if (item && wnd->_args.on_itemmsg)
+					{
+						ItemMsgData data = { 0 };
+						wnd->_args.on_itemmsg(item, ItemMsg_Clicked, &data);
+					}
+					break;
+				case EN_CHANGE:
+					// More hacky crap to find if this EDIT control belongs to an IntBox control,
+					// because an UpDown's buddy silently sets the value
+					for (WndItem* next = 0; next = Window_Items_Next(wnd, next);)
+					{
+						if (next->type == ItemType_IntBox)
+						{
+							HWND hBuddy = SendMessage((HWND)next->_id, UDM_GETBUDDY, 0, 0);
+							if (hBuddy == hItem)
+							{
+								if (next && wnd->_args.on_itemmsg)
+								{
+									ItemMsgData data;
+									data.oldval.i = -1;	// Uh so windooz is kinda wack and idk how to get old value. 
+														// UDM_GETPOS32 will silently update when used...
+									data.newval.i = SendMessage((HWND)next->_id, UDM_GETPOS32, 0, 0);
+									wnd->_args.on_itemmsg(next, ItemMsg_ValueChanged, &data);
+								}
+								break;
+							}
+						}
+					}
+					break;
 				}
 			}
 			break;
@@ -580,6 +644,25 @@ LPTSTR NativeString(const UniChar* Unicode)
 void NativeCleanup(LPTSTR Text)
 {
 #ifndef UNICODE
+	free(Text);
+#endif
+}
+
+const char* UTF8String(const LPTSTR* Text)
+{
+#ifdef UNICODE
+	size_t len = wcslen(Text) + 1;
+	const char* text = malloc(len);
+	WideCharToMultiByte(CP_UTF8, WC_COMPOSITECHECK, Text, -1, text, len, 0, 0);
+	return text;
+#else
+	return (const char*)Text;
+#endif
+}
+
+void UTF8Cleanup(const char* Text)
+{
+#ifdef UNICODE
 	free(Text);
 #endif
 }

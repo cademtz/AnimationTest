@@ -13,6 +13,11 @@ typedef int(*WndCallback)(WndHandle Wnd, int WndMsg);
 typedef int(*ItemCallback)(WndItem* Item, int ItemMsg, ItemMsgData* Data);
 typedef int(*MenuCallback)(MenuItem* Item);
 
+// Handy tools
+
+// - Returns true if any "Yes" option was selected
+extern char OpenDialog(int DialogType, UniChar* Text); 
+
 // Windows
 
 typedef struct _WindowCreationArgs
@@ -67,7 +72,7 @@ void Window_IntBox_GetRange(WndItem* IntBox, int* outMin, int* outMax);
 
 BitmapHandle Bitmap_Create(unsigned int Width, unsigned int Height);
 void Bitmap_Destroy(BitmapHandle Bmp);
-extern void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, unsigned int Color);
+extern void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, int Width, unsigned int Color);
 extern void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int W, int H, unsigned int Color);
 
 // Enums
@@ -85,6 +90,7 @@ enum EItemType
 	ItemType_Button = 0,
 	ItemType_Label,
 	ItemType_IntBox,
+	ItemType_CheckBox,
 };
 
 enum EMsgs
@@ -113,11 +119,21 @@ enum EKey
 	Key_Period,
 	Key_Ctrl,
 	Key_Shift,
-	Key_Alt
+	Key_Alt,
+	Key_Space,
 	// Keys for numbers 0-9 and letters A-Z correspond with their ASCII values ('A', 'B', '7', etc...)
 };
 
+
 // ----- Private functions and variables ----- //
+
+enum EDialogType
+{
+	DialogType_Ok = 0,
+	DialogType_YesNo,
+	DialogType_Error,
+	DialogType_Warning,
+};
 
 // Windows
 

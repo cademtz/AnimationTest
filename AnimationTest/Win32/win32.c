@@ -1,11 +1,9 @@
 #include "../window.h"
 #include <Windows.h>
-#include <Uxtheme.h>
 #include <CommCtrl.h>
 #include <stdio.h>
 
 #pragma comment(lib, "Comctl32.lib")
-#pragma comment(lib, "UXTHEME.lib")
 
 HINSTANCE hInst = 0;
 HFONT font_best; // best font :)
@@ -16,6 +14,8 @@ struct _OSDataImpl
 	void* aClass;
 	HWND hWnd;
 	MenuItem mainMenu;
+	HBITMAP backbuf;
+	HDC hdc;
 };
 
 struct _OSBitmapImpl
@@ -29,8 +29,9 @@ LPTSTR NativeString(const UniChar* Unicode);
 void NativeCleanup(LPTSTR Text);
 MenuItem* Menu_FindId(WndHandle Wnd, void* Id);
 WndItem* Item_FindId(WndHandle Wnd, void* Id);
+void InitBackbuf(OSData* Data);
 
-OSData* _Window_Create_Impl(const WindowCreationArgs* Args)
+OSData* _Window_Create_Impl(WndHandle Data)
 {
 	static char init = 1;
 	if (init)
@@ -44,11 +45,10 @@ OSData* _Window_Create_Impl(const WindowCreationArgs* Args)
 
 	OSData* win32 = malloc(sizeof(*win32));
 	ZeroMemory(win32, sizeof(*win32));
+	Data->_data = win32;
 
-	 win32->szTitle = Args->sztitle;
-#ifndef UNICODE
-	win32->szTitle = NativeString(Args->sztitle);
-#endif
+	WindowCreationArgs* args = &Data->_args;
+	win32->szTitle = NativeString(args->sztitle);
 
 	hInst = GetModuleHandle(0);
 
@@ -59,23 +59,27 @@ OSData* _Window_Create_Impl(const WindowCreationArgs* Args)
 	{
 		ZeroMemory(&cl, sizeof(cl));
 		cl.hInstance = hInst;
-		cl.hbrBackground = (HBRUSH)COLOR_WINDOW;
+		cl.hbrBackground = 0;
 		cl.lpszClassName = win32->szTitle;
+		cl.cbWndExtra = sizeof(void*); // To store its own WndHandle
 		cl.hCursor = LoadCursor(0, IDC_ARROW);
 		cl.lpfnWndProc = &WndProc;
 		win32->aClass = RegisterClass(&cl);
 	}
 
 	RECT rect = { 0 };
-	rect.right = Args->width;
-	rect.bottom = Args->height;
+	rect.right = args->width;
+	rect.bottom = args->height;
 	AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
 
 	win32->hWnd = CreateWindow(
-		win32->aClass, win32->szTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+		win32->aClass, win32->szTitle, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
 		rect.right - rect.left, rect.bottom - rect.top, 0, 0, hInst, 0);
 
-	if (Args->visible)
+	InitBackbuf(win32);
+	SetWindowLongPtr(win32->hWnd, 0, (LONG_PTR)Data);
+
+	if (args->visible)
 		ShowWindow(win32->hWnd, SW_SHOW);
 
 	return win32;
@@ -96,13 +100,32 @@ int Window_Show(WndHandle Wnd, char bShow) {
 	return ShowWindow(Wnd->_data->hWnd, bShow ? SW_SHOW : SW_HIDE);
 }
 
-void Window_Redraw(WndHandle Wnd) {
-	BOOL bruh = InvalidateRect(Wnd->_data->hWnd, 0, 0);
+void Window_Redraw(WndHandle Wnd, int* opt_xywh)
+{
+	if (opt_xywh)
+	{
+		RECT rect = { opt_xywh[0], opt_xywh[1] };
+		rect.right = rect.left + opt_xywh[2], rect.bottom = rect.top + opt_xywh[3];
+		InvalidateRect(Wnd->_data->hWnd, &rect, 0);
+	}
+	else
+		InvalidateRect(Wnd->_data->hWnd, 0, 0);
+}
+
+void Window_Draw_Rect(WndHandle Wnd, int X, int Y, int W, int H, unsigned int Color)
+{
+	HDC dc = Wnd->_data->hdc;
+	HBRUSH brush = GetStockObject(DC_BRUSH);
+	SetDCBrushColor(dc, Color);
+
+	RECT rect = { X, Y };
+	rect.right = X + W, rect.bottom = Y + H;
+	FillRect(dc, &rect, brush);
 }
 
 void Window_Draw_Bitmap(WndHandle Wnd, BitmapHandle Bmp, int X, int Y)
 {
-	HDC hdc = GetDC(Wnd->_data->hWnd);
+	HDC hdc = Wnd->_data->hdc;
 
 	BITMAP bm;
 	HDC hdcMem = CreateCompatibleDC(hdc);
@@ -112,8 +135,6 @@ void Window_Draw_Bitmap(WndHandle Wnd, BitmapHandle Bmp, int X, int Y)
 	BitBlt(hdc, X, Y, bm.bmWidth, bm.bmHeight, hdcMem, 0, 0, SRCCOPY);
 	SelectObject(hdcMem, hbmOld);
 	DeleteDC(hdcMem);
-
-	ReleaseDC(Wnd->_data->hWnd, hdc);
 }
 
 void Window_Item_SetValuei(WndItem* Item, int Value)
@@ -343,7 +364,7 @@ void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, unsigned
 	DeleteDC(dcBmp);
 }
 
-void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int Width, int Height, unsigned int Color)
+void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int W, int H, unsigned int Color)
 {
 	HDC dc = CreateCompatibleDC(0);
 	SelectObject(dc, Bmp->_data->hBmp);
@@ -351,7 +372,7 @@ void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int Width, int Height, uns
 	SetDCBrushColor(dc, Color);
 
 	RECT rect;
-	rect.left = X, rect.top = Y, rect.right = X + Width, rect.bottom = Y + Height;
+	rect.left = X, rect.top = Y, rect.right = X + W, rect.bottom = Y + H;
 	FillRect(dc, &rect, GetStockObject(DC_BRUSH));
 
 	DeleteDC(dc);
@@ -375,6 +396,9 @@ void HandleMouse(WndHandle Wnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		break;
 	}
 
+	if (down && GetActiveWindow() == Wnd->_data->hWnd)
+		SetFocus(Wnd->_data->hWnd);
+
 	switch (uMsg)
 	{
 	case WM_LBUTTONDOWN:
@@ -397,18 +421,7 @@ void HandleMouse(WndHandle Wnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	WndHandle wnd = 0;
-	if (hWnd)
-	{
-		for (WndHandle _next = 0; _next = _Window_list_Next(_next);)
-		{
-			if (_next->_data->hWnd == hWnd)
-			{
-				wnd = _next;
-				break;
-			}
-		}
-	}
+	WndHandle wnd = GetWindowLongPtr(hWnd, 0);
 
 	switch (uMsg)
 	{
@@ -430,18 +443,48 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		case WM_MOUSEMOVE:
 			HandleMouse(wnd, uMsg, wParam, lParam);
 			break;
+		case WM_KEYDOWN:
+		case WM_KEYUP:
+			if (wnd->_args.on_keyboard)
+			{
+				char key = (char)wParam;
+				if (wParam < '0' || wParam > 'Z')
+				{
+					switch (wParam)
+					{
+					case VK_OEM_COMMA:
+						key = Key_Comma; break;
+					case VK_OEM_PERIOD:
+						key = Key_Period; break;
+					case VK_CONTROL:
+					case VK_LCONTROL:
+					case VK_RCONTROL:
+						key = Key_Ctrl; break;
+					case VK_MENU: // Alt key
+						key = Key_Alt; break;
+					default:
+						key = -1;
+					}
+				}
+				if (key != -1)
+					wnd->_args.on_keyboard(wnd, key, uMsg == WM_KEYDOWN);
+			}
+			break;
 		case WM_COMMAND:
-			if (wParam)
+			if (lParam == 0) // Menu
 			{
 				MenuItem* menu = Menu_FindId(wnd, (DWORD)wParam);
 				if (menu && wnd->_args.on_menu)
 					wnd->_args.on_menu(menu);
 			}
-			else if (lParam)
+			else // Control-defined notification code (Anything but 0 and 1)
 			{
 				WndItem* item = Item_FindId(wnd, (DWORD)lParam);
 				if (item && wnd->_args.on_itemmsg)
-					wnd->_args.on_itemmsg(item, ItemMsg_Clicked);
+				{
+					ItemMsgData data = { 0 };
+					wnd->_args.on_itemmsg(item, ItemMsg_Clicked, &data);
+				}
 			}
 			break;
 		case WM_NOTIFY:
@@ -450,18 +493,68 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			WndItem* item = Item_FindId(wnd, hdr->hwndFrom);
 			if (item && wnd->_args.on_itemmsg)
 			{
-				switch (wParam)
+				ItemMsgData data = { 0 };
+				switch (hdr->code)
 				{
 				case UDN_DELTAPOS:
-					wnd->_args.on_itemmsg(item, ItemMsg_ValueChanged);
+				{
+					// Hacky crap just to toss the current number to our program rrgggg
+					NMUPDOWN* ud = (NMUPDOWN*)hdr;
+					data.oldval.i = ud->iPos;
+					data.newval.i = ud->iPos + ud->iDelta;
+
+					int minmax[2];
+					_Window_IntBox_GetSetRange_Impl(item, minmax, 0);
+					if (data.newval.i > minmax[1])
+						data.newval.i = minmax[0];
+					else if (data.newval.i < minmax[0])
+						data.newval.i = minmax[1];
+					wnd->_args.on_itemmsg(item, ItemMsg_ValueChanged, &data);
 					break;
 				}
+				}
 			}
+			break;
+		}
+		case WM_SIZE:
+		{
+			UINT width = LOWORD(lParam), height = HIWORD(lParam);
+			if (width && height)
+			{
+				HDC* dc = &wnd->_data->hdc;
+				HBITMAP* bmp = &wnd->_data->backbuf;
+				DeleteDC(*dc);
+				DeleteObject(*bmp);
+				InitBackbuf(wnd->_data);
+			}
+			break;
+		}
+		case WM_ERASEBKGND:
+		{
+			return 1;
+			break;
 		}
 		case WM_PAINT:
+		{
+			RECT client;
+			GetClientRect(hWnd, &client);
+			static HBRUSH bkg = 0;
+			if (!bkg)
+				bkg = CreateSolidBrush(0xEEEEEE);
+
+			FillRect(wnd->_data->hdc, &client, bkg);
+
 			if (wnd->_args.on_wndmsg)
 				wnd->_args.on_wndmsg(wnd, WndMsg_Draw);
+
+			PAINTSTRUCT ps;
+			HDC dc = BeginPaint(hWnd, &ps);
+
+			BitBlt(dc, 0, 0, client.right - client.left, client.bottom - client.top, wnd->_data->hdc, 0, 0, SRCCOPY);
+
+			EndPaint(hWnd, &ps);
 			break;
+		}
 		case WM_CLOSE:
 			if (wnd->_args.on_wndmsg && wnd->_args.on_wndmsg(wnd, WndMsg_Closing) == WndCallback_Skip)
 				return 0;
@@ -524,4 +617,18 @@ WndItem* Item_FindId(WndHandle Wnd, void* Id)
 		if (_next->_id == Id)
 			return _next;
 	return 0;
+}
+
+void InitBackbuf(OSData* Data)
+{
+	HDC wnddc = GetDC(Data->hWnd);
+	Data->hdc = CreateCompatibleDC(wnddc);
+
+	RECT client;
+	GetClientRect(Data->hWnd, &client);
+
+	Data->backbuf = CreateCompatibleBitmap(wnddc, client.right - client.left, client.bottom - client.top);
+	SelectObject(Data->hdc, Data->backbuf);
+
+	ReleaseDC(Data->hWnd, wnddc);
 }

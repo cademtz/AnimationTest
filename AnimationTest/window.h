@@ -2,13 +2,15 @@
 
 typedef struct _WndHandle* WndHandle;
 typedef struct _WndItem WndItem;
+typedef struct _ItemMsgData ItemMsgData;
 typedef struct _MenuItem MenuItem;
 typedef struct _BitmapData* BitmapHandle;
 typedef unsigned short UniChar; // UTF-16 UNICODE character
 
 typedef int(*MouseCallback)(WndHandle Wnd, int X, int Y, int MouseBtn, int Down);
+typedef int(*KeyboardCallback)(WndHandle Wnd, char Key, char bDown);
 typedef int(*WndCallback)(WndHandle Wnd, int WndMsg);
-typedef int(*ItemCallback)(WndItem* Item, int ItemMsg);
+typedef int(*ItemCallback)(WndItem* Item, int ItemMsg, ItemMsgData* Data);
 typedef int(*MenuCallback)(MenuItem* Item);
 
 // Windows
@@ -22,6 +24,7 @@ typedef struct _WindowCreationArgs
 	// ----- Optional ----- //
 
 	MouseCallback on_mouse;
+	KeyboardCallback on_keyboard;
 	WndCallback on_wndmsg;
 	ItemCallback on_itemmsg;
 	MenuCallback on_menu;
@@ -41,7 +44,8 @@ MenuItem* Window_Menu_Add_Child(WndHandle Wnd, MenuItem* Parent, const char* Nam
 
 // Drawing
 
-extern void Window_Redraw(WndHandle Wnd);
+extern void Window_Redraw(WndHandle Wnd, int* opt_xywh);
+extern void Window_Draw_Rect(WndHandle Wnd, int X, int Y, int W, int H, unsigned int Color);
 extern void Window_Draw_Bitmap(WndHandle Wnd, BitmapHandle Bmp, int X, int Y);
 
 // Items
@@ -64,7 +68,7 @@ void Window_IntBox_GetRange(WndItem* IntBox, int* outMin, int* outMax);
 BitmapHandle Bitmap_Create(unsigned int Width, unsigned int Height);
 void Bitmap_Destroy(BitmapHandle Bmp);
 extern void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, unsigned int Color);
-extern void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int Width, int Height, unsigned int Color);
+extern void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int W, int H, unsigned int Color);
 
 // Enums
 
@@ -98,8 +102,19 @@ enum EMsgs
 enum EWndCallback
 {
 	WndCallback_None = 0,
-	WndCallback_Skip = 0, // - Skip default behavior after return
+	WndCallback_Skip, // - Skip default behavior after return
 	WndCallback_Close // - Returning this will close and destroy the window
+};
+
+enum EKey
+{
+	Key_None = 0,
+	Key_Comma,
+	Key_Period,
+	Key_Ctrl,
+	Key_Shift,
+	Key_Alt
+	// Keys for numbers 0-9 and letters A-Z correspond with their ASCII values ('A', 'B', '7', etc...)
 };
 
 // ----- Private functions and variables ----- //
@@ -135,7 +150,7 @@ extern WindowList _Window_list;
 // - Set 'Item' to 0 for start of list
 WndHandle _Window_list_Next(WndHandle Wnd);
 
-extern OSData* _Window_Create_Impl(const WindowCreationArgs* Args);
+extern OSData* _Window_Create_Impl(WndHandle Data);
 
 // Menu list and menu items
 
@@ -183,6 +198,20 @@ typedef struct _WndItemList
 	WndItem* head, * tail;
 	int count;
 } WndItemList;
+
+typedef struct _ItemMsgData
+{
+	union
+	{
+		int i;
+		float fl;
+	} newval;
+	union
+	{
+		int i;
+		float fl;
+	} oldval;
+} ItemMsgData;
 
 extern int _Window_Item_Add_Impl(WndItem* Item);
 extern char _Window_Item_UpdateText_Impl(WndItem* Item);

@@ -16,7 +16,7 @@ WndHandle Window_Create(const WindowCreationArgs* Args)
 	memset(wnd->_items, 0, sizeof(*wnd->_items));
 
 	wnd->_args = *Args;
-	wnd->_data = _Window_Create_Impl(Args);
+	_Window_Create_Impl(wnd);
 
 	if (_Window_list.count)
 		_Window_list.tail->_next = wnd;

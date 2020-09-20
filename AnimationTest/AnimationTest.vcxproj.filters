@@ -27,6 +27,12 @@
     <ClCompile Include="project.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="colorpicker.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Win32\win32_threading.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="window.h">
@@ -36,6 +42,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="project.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="colorpicker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="threading.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

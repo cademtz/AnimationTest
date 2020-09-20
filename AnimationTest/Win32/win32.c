@@ -92,9 +92,31 @@ OSData* _Window_Create_Impl(WndHandle Data)
 	rect.bottom = args->height;
 	AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
 
+	DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+	HWND hParent = 0;
+	if (Data->_parent)
+	{
+		style = WS_CHILD | WS_CLIPCHILDREN;
+		hParent = Data->_parent->_data->hWnd;
+	}
+
+	int x = CW_USEDEFAULT, y = x;
+	if (Data->_args.x != -1)
+		x = Data->_args.x;
+	if (Data->_args.y != -1)
+		y = Data->_args.y;
+
 	win32->hWnd = CreateWindow(
-		win32->aClass, win32->szTitle, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
-		rect.right - rect.left, rect.bottom - rect.top, 0, 0, hInst, 0);
+		win32->aClass, win32->szTitle, style, x, y,
+		rect.right - rect.left, rect.bottom - rect.top, hParent, 0, hInst, 0);
+
+	if (!win32->hWnd)
+	{
+		DWORD error = GetLastError();
+		WCHAR buf[256];
+		FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM, 0, error, 0, &buf, sizeof(buf) / sizeof(buf[0]), 0);
+		printf("Error creating window: (%X) %S\n", error, buf);
+	}
 
 	InitBackbuf(win32);
 	SetWindowLongPtr(win32->hWnd, 0, (LONG_PTR)Data);
@@ -103,6 +125,45 @@ OSData* _Window_Create_Impl(WndHandle Data)
 		ShowWindow(win32->hWnd, SW_SHOW);
 
 	return win32;
+}
+
+char _Window_GetSetPos_Impl(WndHandle Wnd, int* opt_getXY, int* opt_setXY)
+{
+	char result = 1;
+	if (opt_getXY)
+	{
+		RECT rect;
+		if (result &= GetWindowRect(Wnd->_data->hWnd, &rect))
+		{
+			opt_getXY[0] = rect.left;
+			opt_getXY[1] = rect.top;
+		}
+	}
+	if (opt_setXY)
+		result &= SetWindowPos(Wnd->_data->hWnd, 0, opt_setXY[0], opt_setXY[1], 0, 0, SWP_NOSIZE | SWP_NOOWNERZORDER);
+	return result;
+}
+
+char _Window_GetSetSize_Impl(WndHandle Wnd, int* opt_getWH, int* opt_setWH)
+{
+	char result = 1;
+	RECT rect = { 0 };
+	HWND hWnd = Wnd->_data->hWnd;
+	if (opt_getWH)
+	{
+		if (result &= GetClientRect(hWnd, &rect))
+		{
+			opt_getWH[0] = rect.right - rect.left;
+			opt_getWH[1] = rect.bottom - rect.top;
+		}
+	}
+	if (opt_setWH)
+	{
+		rect.right = opt_setWH[0], rect.bottom = opt_setWH[1];
+		AdjustWindowRect(&rect, GetWindowLong(hWnd, GWL_STYLE), GetMenu(hWnd) != 0);
+		result &= SetWindowPos(hWnd, 0, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_NOMOVE | SWP_NOOWNERZORDER);
+	}
+	return result;
 }
 
 int Window_RunAll()
@@ -132,7 +193,7 @@ void Window_Redraw(WndHandle Wnd, int* opt_xywh)
 		InvalidateRect(Wnd->_data->hWnd, 0, 0);
 }
 
-void Window_Draw_Rect(WndHandle Wnd, int X, int Y, int W, int H, unsigned int Color)
+void Window_Draw_Rect(WndHandle Wnd, int X, int Y, int W, int H, IntColor Color)
 {
 	HDC dc = Wnd->_data->hdc;
 	HBRUSH brush = GetStockObject(DC_BRUSH);
@@ -381,7 +442,7 @@ int _Bitmap_Destroy_Impl(OSBitmap* osData)
 	return 0;
 }
 
-void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, int Width, unsigned int Color)
+void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, int Width, IntColor Color)
 {
 	HPEN pen = CreatePen(PS_SOLID, Width < 1 ? 1 : Width, Color);
 
@@ -397,7 +458,7 @@ void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, int Widt
 	DeleteObject(pen);
 }
 
-void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int W, int H, unsigned int Color)
+void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int W, int H, IntColor Color)
 {
 	HDC dc = CreateCompatibleDC(0);
 	SelectObject(dc, Bmp->_data->hBmp);
@@ -497,6 +558,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 						key = Key_Alt; break;
 					case VK_SPACE:
 						key = Key_Space; break;
+					case VK_OEM_4: // For standard US keyboard layout
+						key = Key_LBracket; break;
+					case VK_OEM_6: // For standard US keyboard layout
+						key = Key_RBracket; break;
 					default:
 						key = -1;
 					}

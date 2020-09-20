@@ -10,7 +10,7 @@ UID GenerateUID()
 	return ++i; // ;)
 }
 
-void Project_Init(int Width, int Height, unsigned int BkgCol)
+void Project_Init(int Width, int Height, IntColor BkgCol)
 {
 	my_project.width = Width, my_project.height = Height, my_project.bkgcol = BkgCol;
 	if (!my_project._frames)

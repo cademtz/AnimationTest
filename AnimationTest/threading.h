@@ -1,0 +1,27 @@
+#pragma once
+
+typedef struct _OSThreadImpl* ThreadHandle;
+typedef int(*ThreadStartFn)(void* UserData);
+
+// - Creates a suspended thread
+// - Start it at any time by calling Thread_Resume
+extern ThreadHandle Thread_Create(ThreadStartFn StartFunc, void* opt_UserData);
+extern void Thread_Resume(ThreadHandle Thread);
+extern void Thread_Suspend(ThreadHandle Thread);
+
+// - Terminates the thread, setting its return to -1
+// - Does NOT free the handle, see Thread_Destroy
+extern void Thread_Terminate(ThreadHandle Thread); 
+
+// - Gets the returned int (Typically exit code) of the thread
+// - Returns 0 on failure, or if the thread has not yet exited
+// - Must be used on a valid ThreadHandle before it has been destroyed
+extern char Thread_GetReturn(ThreadHandle Thread, int* outReturn);
+
+// - Frees the handle and ensures the thread is stopped or terminated
+extern void Thread_Destroy(ThreadHandle Thread);
+
+// Functions for the current thread
+
+extern void Thread_Current_Sleep(unsigned int Milliseconds);
+extern void Thread_Current_Exit(int ThreadReturn);

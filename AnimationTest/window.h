@@ -1,11 +1,14 @@
 #pragma once
 
+#define COLOR_INT(r, g, b) (r | (g << 8) | (b << 16))
+
 typedef struct _WndHandle* WndHandle;
 typedef struct _WndItem WndItem;
 typedef struct _ItemMsgData ItemMsgData;
 typedef struct _MenuItem MenuItem;
 typedef struct _BitmapData* BitmapHandle;
 typedef unsigned short UniChar; // UTF-16 UNICODE character
+typedef unsigned int IntColor; // 32-bit color, RGBA (in reverse order)
 
 typedef int(*MouseCallback)(WndHandle Wnd, int X, int Y, int MouseBtn, int Down);
 typedef int(*KeyboardCallback)(WndHandle Wnd, char Key, char bDown);
@@ -23,10 +26,13 @@ extern char OpenDialog(int DialogType, UniChar* Text);
 typedef struct _WindowCreationArgs
 {
 	unsigned int width, height;
+	int x, y; // If top-level window, set -1 for default pos
 	const UniChar* sztitle;
 	char visible; // If true, start window as visible
 
 	// ----- Optional ----- //
+
+	void* userdata;
 
 	MouseCallback on_mouse;
 	KeyboardCallback on_keyboard;
@@ -38,11 +44,16 @@ typedef struct _WindowCreationArgs
 // - Returns 0 on failure
 // - Only use within a single designated window thread
 WndHandle Window_Create(const WindowCreationArgs* Args);
+WndHandle Window_Create_Child(WndHandle Parent, const WindowCreationArgs* Args);
 
 // - Performs a blocking call, running all created windows so far
 // - Must never be used outside the thread you have created windows in
 extern int Window_RunAll();
 extern int Window_Show(WndHandle Wnd, char bShow);
+char Window_GetPos(WndHandle Wnd, int* X, int* Y);
+char Window_SetPos(WndHandle Wnd, int X, int Y);
+char Window_GetSize(WndHandle Wnd, int* Width, int* Height);
+char Window_SetSize(WndHandle Wnd, int Width, int Height);
 
 MenuItem* Window_Menu_Add(WndHandle Wnd, const char* Name);
 MenuItem* Window_Menu_Add_Child(WndHandle Wnd, MenuItem* Parent, const char* Name);
@@ -50,7 +61,7 @@ MenuItem* Window_Menu_Add_Child(WndHandle Wnd, MenuItem* Parent, const char* Nam
 // Drawing
 
 extern void Window_Redraw(WndHandle Wnd, int* opt_xywh);
-extern void Window_Draw_Rect(WndHandle Wnd, int X, int Y, int W, int H, unsigned int Color);
+extern void Window_Draw_Rect(WndHandle Wnd, int X, int Y, int W, int H, IntColor Color);
 extern void Window_Draw_Bitmap(WndHandle Wnd, BitmapHandle Bmp, int X, int Y);
 
 // Items
@@ -72,8 +83,8 @@ void Window_IntBox_GetRange(WndItem* IntBox, int* outMin, int* outMax);
 
 BitmapHandle Bitmap_Create(unsigned int Width, unsigned int Height);
 void Bitmap_Destroy(BitmapHandle Bmp);
-extern void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, int Width, unsigned int Color);
-extern void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int W, int H, unsigned int Color);
+extern void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, int Width, IntColor Color);
+extern void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int W, int H, IntColor Color);
 
 // Enums
 
@@ -121,6 +132,8 @@ enum EKey
 	Key_Shift,
 	Key_Alt,
 	Key_Space,
+	Key_LBracket, // Can be '[' or '{'
+	Key_RBracket, // Can be ']' or '}'
 	// Keys for numbers 0-9 and letters A-Z correspond with their ASCII values ('A', 'B', '7', etc...)
 };
 
@@ -143,14 +156,17 @@ typedef struct _OSBitmapImpl OSBitmap;
 
 typedef struct _MenuList MenuList;
 typedef struct _WndItemList WndItemList;
-
+typedef struct _WindowList WindowList;
 
 struct _WndHandle
 {
+	void* userdata;
 	MenuList* _menus;
 	WndItemList* _items;
 	WindowCreationArgs _args;
 	WndHandle _next;
+	WndHandle _parent;
+	WindowList* _children;
 	OSData* _data;
 };
 
@@ -165,8 +181,12 @@ extern WindowList _Window_list;
 // - Returns 0 at the end
 // - Set 'Item' to 0 for start of list
 WndHandle _Window_list_Next(WndHandle Wnd);
-
+WndHandle _Window_Child_Next(WndHandle Wnd, WndHandle Next);
+WndHandle _Window_Create(WndHandle Parent, const WindowCreationArgs* Args);
 extern OSData* _Window_Create_Impl(WndHandle Data);
+
+extern char _Window_GetSetPos_Impl(WndHandle Wnd, int* opt_getXY, int* opt_setXY);
+extern char _Window_GetSetSize_Impl(WndHandle Wnd, int* opt_getWH, int* opt_setWH);
 
 // Menu list and menu items
 
@@ -192,9 +212,6 @@ extern int _Window_Menu_Add_Child_Impl(WndHandle Wnd, MenuItem* Parent, MenuItem
 // - Returns 0 at the end
 // - Set 'Item' to 0 for start of list
 MenuItem* _Window_Menu_Next(WndHandle Wnd, MenuItem* Item);
-
-// - Returns 0 at the end
-// - Set 'Item' to 0 for start of list
 MenuItem* _Window_Menu_Child_Next(MenuItem* Parent, MenuItem* Item);
 
 // Window items

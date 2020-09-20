@@ -6,30 +6,59 @@ WindowList _Window_list = { 0 };
 
 WndHandle Window_Create(const WindowCreationArgs* Args)
 {
-	WndHandle wnd = malloc(sizeof(*wnd));
-	memset(wnd, 0, sizeof(*wnd));
-
-	wnd->_menus = malloc(sizeof(*wnd->_menus));
-	memset(wnd->_menus, 0, sizeof(*wnd->_menus));
-
-	wnd->_items = malloc(sizeof(*wnd->_items));
-	memset(wnd->_items, 0, sizeof(*wnd->_items));
-
-	wnd->_args = *Args;
-	_Window_Create_Impl(wnd);
-
-	if (_Window_list.count)
-		_Window_list.tail->_next = wnd;
-	else
-		_Window_list.head = wnd;
-
-	_Window_list.tail = wnd;
-	_Window_list.count++;
-
+	WndHandle wnd = _Window_Create(0, Args);
 	if (wnd->_args.on_wndmsg)
 		wnd->_args.on_wndmsg(wnd, WndMsg_Created);
-
 	return wnd;
+}
+
+WndHandle Window_Create_Child(WndHandle Parent, const WindowCreationArgs* Args)
+{
+	if (!Parent->_children)
+	{
+		Parent->_children = malloc(sizeof(WindowList));
+		memset(Parent->_children, 0, sizeof(WindowList));
+	}
+
+	WndHandle wnd = _Window_Create(Parent, Args);
+	wnd->_parent = Parent;
+	if (wnd->_args.on_wndmsg)
+		wnd->_args.on_wndmsg(wnd, WndMsg_Created);
+	return wnd;
+}
+
+char Window_GetPos(WndHandle Wnd, int* X, int* Y)
+{
+	int xy[2];
+	if (_Window_GetSetPos_Impl(Wnd, xy, 0))
+	{
+		*X = xy[0], * Y = xy[1];
+		return 1;
+	}
+	return 0;
+}
+
+char Window_SetPos(WndHandle Wnd, int X, int Y)
+{
+	int xy[2] = { X, Y };
+	return _Window_GetSetPos_Impl(Wnd, 0, xy);
+}
+
+char Window_GetSize(WndHandle Wnd, int* Width, int* Height)
+{
+	int wh[2];
+	if (_Window_GetSetSize_Impl(Wnd, wh, 0))
+	{
+		*Width = wh[0], * Height = wh[1];
+		return 1;
+	}
+	return 0;
+}
+
+char Window_SetSize(WndHandle Wnd, int Width, int Height)
+{
+	int wh[2] = { Width, Height };
+	return _Window_GetSetSize_Impl(Wnd, 0, wh);
 }
 
 MenuItem* Window_Menu_Add(WndHandle Wnd, const char* Name)
@@ -82,6 +111,44 @@ WndHandle _Window_list_Next(WndHandle Wnd)
 	if (!Wnd)
 		return _Window_list.head;
 	return Wnd->_next;
+}
+
+WndHandle _Window_Child_Next(WndHandle Wnd, WndHandle Next)
+{
+	if (!Next && Wnd->_children)
+		return Wnd->_children->head;
+	return Next->_next;
+}
+
+WndHandle _Window_Create(WndHandle Parent, const WindowCreationArgs* Args)
+{
+	WndHandle wnd = malloc(sizeof(*wnd));
+	memset(wnd, 0, sizeof(*wnd));
+
+	wnd->_menus = malloc(sizeof(*wnd->_menus));
+	memset(wnd->_menus, 0, sizeof(*wnd->_menus));
+
+	wnd->_items = malloc(sizeof(*wnd->_items));
+	memset(wnd->_items, 0, sizeof(*wnd->_items));
+
+	wnd->_args = *Args;
+	wnd->_parent = Parent;
+	wnd->userdata = wnd->_args.userdata;
+	_Window_Create_Impl(wnd);
+
+	WindowList* list = Parent ? Parent->_children : &_Window_list;
+	if (list->count)
+		list->tail->_next = wnd;
+	else
+		list->head = wnd;
+
+	list->tail = wnd;
+	list->count++;
+
+	if (wnd->_args.on_wndmsg)
+		wnd->_args.on_wndmsg(wnd, WndMsg_Created);
+
+	return wnd;
 }
 
 MenuItem* _Window_Menu_Next(WndHandle Wnd, MenuItem* Item)

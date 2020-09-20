@@ -8,14 +8,15 @@ typedef unsigned int UID; // Unique ID
 
 typedef struct _Project
 {
-	unsigned int width, height, bkgcol;
+	unsigned int width, height;
+	IntColor bkgcol;
 	FrameList* _frames;
 	FrameItem* frame_active;
 } Project;
 
 extern Project my_project;
 
-void Project_Init(int Width, int Height, unsigned int BkgCol);
+void Project_Init(int Width, int Height, IntColor BkgCol);
 void Project_ChangeFrame(int Index);
 void Project_InsertFrame(int Index);
 

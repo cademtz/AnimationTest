@@ -1,0 +1,1 @@
+clang ezcompile.c -l 'user32.lib' -l 'gdi32.lib' -l 'comctl32.lib'

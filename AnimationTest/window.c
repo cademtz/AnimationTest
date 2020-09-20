@@ -176,7 +176,7 @@ WndItem* Window_Items_Next(WndHandle Wnd, WndItem* Item)
 	return Item->_next;
 }
 
-WndItem* Window_Item_Add(WndHandle Wnd, int Type, int X, int Y, int W, int H, UniChar* sztext)
+WndItem* Window_Item_Add(WndHandle Wnd, int Type, int X, int Y, int W, int H, const UniChar* sztext)
 {
 	WndItem* item = malloc(sizeof(*item));
 	memset(item, 0, sizeof(*item));

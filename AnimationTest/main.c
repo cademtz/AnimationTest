@@ -32,7 +32,7 @@ WndItem* int_width, * int_height, * btn_new, * btn_cancel;
 
 void ResetProject();
 
-inline void ChangedFrameCount() {
+void ChangedFrameCount() {
 	Window_IntBox_SetRange(int_frame, 0, my_project._frames->count - 1);
 }
 
@@ -289,12 +289,12 @@ int main()
 	picker_brush->on_changed = &OnColorPicked;
 	Window_SetPos(picker_brush->wnd, 0, 35);
 
-	MenuItem* mProj = Window_Menu_Add(wnd_main, L"&Project", 0);
-	mProperties = Window_Menu_Add_Child(wnd_main, mProj, L"&Properties...", &OnMenu);
+	MenuItem* mProj = Window_Menu_Add(wnd_main, L"&Project");
+	mProperties = Window_Menu_Add_Child(wnd_main, mProj, L"&Properties...");
 
-	MenuItem* mSesh = Window_Menu_Add(wnd_main, L"&Session", 0);
-	Window_Menu_Add_Child(wnd_main, mSesh, L"&Join", 0);
-	Window_Menu_Add_Child(wnd_main, mSesh, L"&Host", 0);
+	MenuItem* mSesh = Window_Menu_Add(wnd_main, L"&Session");
+	Window_Menu_Add_Child(wnd_main, mSesh, L"&Join");
+	Window_Menu_Add_Child(wnd_main, mSesh, L"&Host");
 
 	int nextx = 5;
 	btn_add = Window_Item_Add(wnd_main, ItemType_Button, 5, 5, 40, 23, L"Add");

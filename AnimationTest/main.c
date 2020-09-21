@@ -246,10 +246,16 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 	case ItemMsg_ValueChanged:
 		if (Item == int_frame)
 		{
-			Session_LockFrames();
-			Session_SetFrame(Data->newval.i);
-			Session_UnlockFrames();
-			Window_Redraw(int_frame->wnd, 0);
+			Mutex_Lock(mtx_play);
+			char playing = bPlaying;
+			Mutex_Unlock(mtx_play);
+			if (!playing)
+			{
+				Session_LockFrames();
+				Session_SetFrame(Data->newval.i);
+				Session_UnlockFrames();
+				Window_Redraw(int_frame->wnd, 0);
+			}
 		}
 		else if (Item == int_brush)
 			if (tool_active)

@@ -239,10 +239,10 @@ void Window_Item_SetValuei(WndItem* Item, int Value)
 	switch (Item->type)
 	{
 	case ItemType_IntBox:
-		SendMessage(hWnd, UDM_SETPOS32, 0, Value);
+		SendNotifyMessage(hWnd, UDM_SETPOS32, 0, Value);
 		break;
 	case ItemType_CheckBox:
-		SendMessage(hWnd, BM_SETCHECK, Value ? BST_CHECKED : BST_UNCHECKED, 0);
+		SendNotifyMessage(hWnd, BM_SETCHECK, Value ? BST_CHECKED : BST_UNCHECKED, 0);
 		break;
 	}
 }

@@ -94,6 +94,8 @@ void Mutex_Unlock(MutexHandle Mutex)
 		DWORD code = GetLastError();
 		char buf[256];
 		FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, code, 0, &buf, sizeof(buf), 0);
-		printf("[ERROR] 0x%X, Failed to release mutex %p: %s\n", code, Mutex, buf);
+		//printf("[ERROR] 0x%X, Failed to release mutex %p: %s\n", code, Mutex, buf);
 	}
+	//else
+		//printf("yay released mutex :D\n");
 }

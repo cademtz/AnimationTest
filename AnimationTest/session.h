@@ -18,7 +18,7 @@ typedef struct _NetSession
 	FrameList* _frames;
 	FrameItem* _frame_active;
 	IntColor bkgcol;
-	unsigned int width, height, frame_index, undo_max;
+	unsigned int width, height, _index_active, undo_max;
 	unsigned char fps;
 
 } NetSession;
@@ -33,7 +33,7 @@ void Session_InsertFrame(int Index);
 void Session_RemoveFrame(int Index);
 inline int Session_FrameCount() { return my_sesh._frames->count; }
 inline FrameItem* Session_ActiveFrame() { return my_sesh._frame_active; }
-inline int Session_ActiveFrameIndex() { return BasicList_IndexOfFirst(my_sesh._frames, my_sesh._frame_active); }
+inline int Session_ActiveFrameIndex() { return my_sesh._index_active; }
 
 NetUser* Session_GetUser(UID IdUser);
 

@@ -138,25 +138,31 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 	case 'E':
 	case 'B':
 	{
-		WndItem* item = Key == 'B' ? bBrush : bEraser, * other = Key != 'B' ? bBrush : bEraser;
-		Window_Item_SetValuei(item, 1);
-		Window_Item_SetValuei(other, 0);
-		SetTool(Key == 'B' ? &tool_brush : &tool_eraser);
+		if (bDown)
+		{
+			WndItem* item = Key == 'B' ? bBrush : bEraser, * other = Key != 'B' ? bBrush : bEraser;
+			Window_Item_SetValuei(item, 1);
+			Window_Item_SetValuei(other, 0);
+			SetTool(Key == 'B' ? &tool_brush : &tool_eraser);
+		}
 		break;
 	}
 	case 'Z':
 	case 'Y':
-		Mutex_Lock(mtx_play);
-		if (!bPlaying)
+		if (bDown)
 		{
-			Session_LockFrames();
-			if (Key == 'Z')
-				NetUser_UndoStroke(user_local);
-			else
-				NetUser_RedoStroke(user_local);
-			Session_UnlockFrames();
+			Mutex_Lock(mtx_play);
+			if (!bPlaying)
+			{
+				Session_LockFrames();
+				if (Key == 'Z')
+					NetUser_UndoStroke(user_local);
+				else
+					NetUser_RedoStroke(user_local);
+				Session_UnlockFrames();
+			}
+			Mutex_Unlock(mtx_play);
 		}
-		Mutex_Unlock(mtx_play);
 		break;
 	case Key_LBracket:
 	case Key_RBracket:
@@ -190,7 +196,6 @@ int OnWndMsg(WndHandle Wnd, int WndMsg)
 		{
 			Mutex_Lock(mtx_play);
 			char playing = bPlaying;
-			Mutex_Unlock(mtx_play);
 			if (!bPlaying)
 				Session_LockFrames();
 
@@ -224,6 +229,7 @@ int OnWndMsg(WndHandle Wnd, int WndMsg)
 
 			if (!bPlaying)
 				Session_UnlockFrames();
+			Mutex_Unlock(mtx_play);
 			break;
 		}
 		case WndMsg_Closing:
@@ -240,7 +246,9 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 	case ItemMsg_ValueChanged:
 		if (Item == int_frame)
 		{
+			Session_LockFrames();
 			Session_SetFrame(Data->newval.i);
+			Session_UnlockFrames();
 			Window_Redraw(int_frame->wnd, 0);
 		}
 		else if (Item == int_brush)
@@ -278,7 +286,10 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 				thread_play = 0;
 			}
 			else
+			{
 				thread_play = Thread_Create(&PlayThread, 0);
+				Thread_Resume(thread_play);
+			}
 		}
 		else if (Item == bBrush || Item == bEraser)
 		{
@@ -328,7 +339,7 @@ int PlayThread(void* UserData)
 			break;
 
 		Session_SetFrame(Session_ActiveFrameIndex() + 1);
-		Thread_Current_Sleep(1000 / Window_Item_GetValuei(int_fps));
+		Thread_Current_Sleep(1000 / my_sesh.fps);
 	}
 	Session_UnlockFrames();
 	return 0;
@@ -347,7 +358,7 @@ void OnSeshMsg(int Msg, UID Object)
 		Window_Item_SetValuei(int_fps, my_sesh.fps);
 		break;
 	case SessionMsg_ChangedFrame:
-		Window_Item_SetValuei(int_frame, Session_ActiveFrame());
+		Window_Item_SetValuei(int_frame, Session_ActiveFrameIndex());
 		Window_Redraw(wnd_main, 0);
 		break;
 	case SessionMsg_ChangedFrameCount:

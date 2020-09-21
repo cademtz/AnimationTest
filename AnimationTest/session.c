@@ -3,10 +3,10 @@
 NetSession my_sesh = { 0 };
 NetUser* user_local = 0;
 
-void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsigned char fps)
+void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsigned char FPS)
 {
 	my_sesh.width = Width, my_sesh.height = Height, my_sesh.bkgcol = BkgCol;
-	my_sesh.undo_max = 25;
+	my_sesh.undo_max = 25, my_sesh.fps = FPS;
 
 	if (!my_sesh.mtx_frames)
 		my_sesh.mtx_frames = Mutex_Create();
@@ -59,7 +59,7 @@ void Session_SetFrame(int Index)
 	else if (Index < 0)
 		Index = my_sesh._frames->count - 1;
 
-	my_sesh.frame_index = Index;
+	my_sesh._index_active = Index;
 	my_sesh._frame_active = FrameList_At(my_sesh._frames, Index);
 	my_sesh.on_seshmsg(SessionMsg_ChangedFrame, 0);
 }
@@ -86,8 +86,8 @@ void Session_RemoveFrame(int Index)
 	int count = my_sesh._frames->count;
 	if (count >= Index)
 	{
-		my_sesh.frame_index = count - 1;
-		my_sesh._frame_active = FrameList_At(my_sesh._frames, my_sesh.frame_index);
+		my_sesh._index_active = count - 1;
+		my_sesh._frame_active = FrameList_At(my_sesh._frames, my_sesh._index_active);
 		my_sesh.on_seshmsg(SessionMsg_ChangedFrameCount, 0);
 	}
 }
@@ -155,9 +155,8 @@ void NetUser_UndoStroke(NetUser* User)
 {
 	if (!User->bDrawing && User->strokes->count)
 	{
-		BasicList_Add(User->undone, BasicList_Pop(User->strokes));
-		UserStroke* stroke = (UserStroke*)User->undone->tail->data;
-		FrameData_RemoveStroke(User->undone->tail, stroke);
+		UserStroke* stroke = BasicList_Pop(User->strokes);
+		BasicList_Add(User->undone, stroke);
 		FrameData_RemoveStroke(stroke->framedat, stroke);
 		my_sesh.on_seshmsg(SessionMsg_UserStrokeUndo, User);
 	}
@@ -170,6 +169,7 @@ void NetUser_RedoStroke(NetUser* User)
 		UserStroke* stroke = BasicList_Pop(User->undone);
 		BasicList_Add(User->strokes, stroke);
 		FrameData_AddStroke(stroke->framedat, stroke);
+		my_sesh.on_seshmsg(SessionMsg_UserStrokeRedo, User);
 	}
 }
 

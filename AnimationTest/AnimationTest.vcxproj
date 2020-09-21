@@ -140,16 +140,21 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="colorpicker.c" />
+    <ClCompile Include="common.c" />
     <ClCompile Include="project.c" />
     <ClCompile Include="main.c" />
+    <ClCompile Include="session.c" />
     <ClCompile Include="Win32\win32.c" />
     <ClCompile Include="Win32\win32_threading.c" />
     <ClCompile Include="window.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="session.h" />
     <ClInclude Include="colorpicker.h" />
+    <ClInclude Include="common.h" />
     <ClInclude Include="project.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="network.h" />
     <ClInclude Include="threading.h" />
     <ClInclude Include="window.h" />
   </ItemGroup>

@@ -3,23 +3,27 @@
 #include <limits.h>
 #include "window.h"
 #include "threading.h"
-#include "project.h"
+#include "session.h"
 #include "colorpicker.h"
 
 // Totally not lazey
 #define ICON_PLAY L"\x25B6"
 #define ICON_STOP L"\x25A0"
 
-typedef struct _DrawTool
+enum EPaintMode
 {
-	int Width;
-	IntColor Color; // RGB
-} DrawTool;
+	// They mean the same thing for now
+	// For future:
+	//	UpdateFrame when client receives user drawings, UpdateCanvas for client-side changes like zoom & drag
+	PaintMode_UpdateFrame = 0,
+	PaintMode_UpdateCanvas = 0
+};
 
 DrawTool tool_brush = { 2, 0x000000 }, tool_eraser = { 16, 0xFFFFFF };
-DrawTool* tool = &tool_brush;
+DrawTool* tool_active = &tool_brush;
 
-ThreadHandle thread_play;
+ThreadHandle thread_play = 0;
+MutexHandle mtx_play;
 
 MenuItem* mProperties;
 WndItem* int_frame, * int_fps, * int_brush, * btn_add, * btn_rem, * btn_clear, * btn_play, * bBrush, * bEraser;
@@ -31,34 +35,15 @@ WndHandle wnd_prop, wnd_main;
 WndItem* int_width, * int_height, * btn_new, * btn_cancel;
 
 void ResetProject();
-
-void ChangedFrameCount() {
-	Window_IntBox_SetRange(int_frame, 0, my_project._frames->count - 1);
-}
-
-void SetFrame(int Index)
-{
-	Index = Index % my_project._frames->count;
-	Project_ChangeFrame(Index);
-	Window_Item_SetValuei(int_frame, Index);
-	Window_Redraw(wnd_main, 0);
-}
-
-void AddFrame()
-{
-	int idx = Window_Item_GetValuei(int_frame) + 1;
-	Project_InsertFrame(idx);
-	ChangedFrameCount();
-	SetFrame(idx);
-}
+int PlayThread(void* UserData);
 
 void SetTool(DrawTool* Tool)
 {
-	tool = Tool;
-	if (tool)
+	tool_active = Tool;
+	if (tool_active)
 	{
-		Window_Item_SetValuei(int_brush, tool->Width);
-		ColorPicker_SetColor(picker_brush, tool->Color);
+		Window_Item_SetValuei(int_brush, tool_active->Width);
+		ColorPicker_SetColor(picker_brush, tool_active->Color);
 	}
 }
 
@@ -71,8 +56,8 @@ int OnMenu(MenuItem* Item)
 
 void OnColorPicked(ColorPicker* Picker)
 {
-	if (tool)
-		tool->Color = Picker->color;
+	if (tool_active)
+		tool_active->Color = Picker->color;
 }
 
 int OnMouse(WndHandle Wnd, int X, int Y, int MouseBtn, int Down)
@@ -80,16 +65,28 @@ int OnMouse(WndHandle Wnd, int X, int Y, int MouseBtn, int Down)
 	switch (MouseBtn)
 	{
 	case MouseBtn_Left:
-		if (my_project.frame_active && Down && tool)
+		Mutex_Lock(mtx_play);
+		if (bPlaying)
+			Session_LockFrames();
+		FrameItem* active = Session_ActiveFrame();
+		if (active && Down && tool_active)
 		{
-			int x1 = X, y1 = Y, x2 = X, y2 = Y;
+			Vec2 point = { X - canvasX, Y - canvasY };
 			if (Down > 1)
-				x1 = lLastX, y1 = lLastY;
-			x1 -= canvasX, x2 -= canvasX, y1 -= canvasY, y2 -= canvasY;
-			Bitmap_Draw_Line(my_project.frame_active->data->bmp, x1, y1, x2, y2, tool->Width, tool->Color);
-			Window_Redraw(Wnd, 0);
+				NetUser_AddToStroke(user_local, &point);
+			else
+				NetUser_BeginStroke(user_local, &point, tool_active, active->data);
 			lLastX = X, lLastY = Y;
 		}
+		else if (!Down)
+		{
+			Session_LockUsers();
+			if (user_local->bDrawing)
+				NetUser_EndStroke(user_local);
+			Session_UnlockUsers();
+		}
+		Session_UnlockFrames();
+		Mutex_Unlock(mtx_play);
 		break;
 	case MoustBtn_Middle:
 		if (Down > 1)
@@ -113,17 +110,30 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 	case Key_Period: // >
 		if (bDown)
 		{
-			int idx = Window_Item_GetValuei(int_frame) + (Key == Key_Comma ? -1 : 1);
-			if (idx < 0)
-				idx = my_project._frames->count - 1;
-			else if (idx >= my_project._frames->count)
-				idx = 0;
-			SetFrame(idx);
+			Mutex_Lock(mtx_play);
+			if (!bPlaying)
+			{
+				Session_LockFrames();
+
+				int idx = Session_ActiveFrameIndex() + (Key == Key_Comma ? -1 : 1);
+				Session_SetFrame(idx);
+
+				Session_UnlockFrames();
+			}
+			Mutex_Unlock(mtx_play);
 		}
 		break;
 	case Key_Space:
-		if (bDown)
-			AddFrame();
+		Mutex_Lock(mtx_play);
+		if (!bPlaying && bDown)
+		{
+			Session_LockFrames();
+			int idx = Session_ActiveFrameIndex() + 1;
+			Session_InsertFrame(idx);
+			Session_SetFrame(idx);
+			Session_UnlockFrames();
+		}
+		Mutex_Unlock(mtx_play);
 		break;
 	case 'E':
 	case 'B':
@@ -134,13 +144,29 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 		SetTool(Key == 'B' ? &tool_brush : &tool_eraser);
 		break;
 	}
+	case 'Z':
+	case 'Y':
+		Mutex_Lock(mtx_play);
+		if (!bPlaying)
+		{
+			Session_LockFrames();
+			if (Key == 'Z')
+				NetUser_UndoStroke(user_local);
+			else
+				NetUser_RedoStroke(user_local);
+			Session_UnlockFrames();
+		}
+		Mutex_Unlock(mtx_play);
+		break;
 	case Key_LBracket:
 	case Key_RBracket:
-		if (tool)
+		Session_LockUsers();
+		if (user_local->bDrawing && tool_active)
 		{
-			tool->Width += Key == Key_LBracket ? -1 : 1;
-			SetTool(tool); // Lazy way to make things update
+			tool_active->Width += Key == Key_LBracket ? -1 : 1;
+			SetTool(tool_active); // Lazy way to make things update
 		}
+		Session_UnlockUsers();
 		break;
 	}
 	return WndCallback_None;
@@ -161,9 +187,45 @@ int OnWndMsg(WndHandle Wnd, int WndMsg)
 		switch (WndMsg)
 		{
 		case WndMsg_Draw:
-			if (my_project.frame_active)
-				Window_Draw_Bitmap(Wnd, my_project.frame_active->data->bmp, canvasX, canvasY);
+		{
+			Mutex_Lock(mtx_play);
+			char playing = bPlaying;
+			Mutex_Unlock(mtx_play);
+			if (!bPlaying)
+				Session_LockFrames();
+
+			FrameItem* frame = Session_ActiveFrame();
+			if (frame)
+			{
+				Window_Draw_Bitmap(Wnd, frame->data->bmp, canvasX, canvasY);
+				for (BasicListItem* next = 0; next = BasicList_Next(frame->data->strokes, next);)
+				{
+					UserStroke* stroke = (UserStroke*)next->data;
+					Vec2* prev = (Vec2*)stroke->points->head->data;
+					DrawTool* dtool = &stroke->tool;
+
+					int x1 = prev->x + canvasX, y1 = prev->y + canvasY;
+					int x2 = x1, y2 = y1;
+
+					if (stroke->points->count > 1)
+					{
+						for (BasicListItem* next = stroke->points->head; next = BasicList_Next(stroke->points, next);)
+						{
+							x1 = x2, y1 = y2;
+							Vec2* vec = (Vec2*)next->data;
+							x2 = vec->x + canvasX, y2 = vec->y + canvasY;
+							Window_Draw_Line(wnd_main, x1, y1, x2, y2, dtool->Width, dtool->Color);
+						}
+					}
+					else
+						Window_Draw_Line(wnd_main, x1, y1, x2, y2, dtool->Width, dtool->Color);
+				}
+			}
+
+			if (!bPlaying)
+				Session_UnlockFrames();
 			break;
+		}
 		case WndMsg_Closing:
 			return WndCallback_Close;
 		}
@@ -178,46 +240,45 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 	case ItemMsg_ValueChanged:
 		if (Item == int_frame)
 		{
-			Project_ChangeFrame(Data->newval.i);
+			Session_SetFrame(Data->newval.i);
 			Window_Redraw(int_frame->wnd, 0);
 		}
 		else if (Item == int_brush)
-			if (tool)
-				tool->Width = Data->newval.i;
+			if (tool_active)
+				tool_active->Width = Data->newval.i;
 		break;
 	case ItemMsg_Clicked:
 
 		// Main window
 
 		if (Item == btn_add)
-			AddFrame();
-		else if (Item == btn_rem && my_project._frames->count > 1)
 		{
-			int idx = Window_Item_GetValuei(int_frame);
-			FrameItem* frame = FrameList_Remove_At(idx);
-			if (frame)
-			{
-				char dup = 0;
-				for (FrameItem* next = 0; next = FrameList_Next(next);)
-					if (next->data == frame->data)
-						dup = 1;
-
-				if (!dup) // No other frame is using the same data
-					FrameData_Destroy(frame->data);
-				Frame_Destroy(frame);
-				ChangedFrameCount();
-				Project_ChangeFrame(idx >= my_project._frames->count - 1 ? --idx : idx);
-				Window_Redraw(Item->wnd, 0);
-			}
+			Session_LockFrames();
+			int idx = Session_ActiveFrameIndex() + 1;
+			Session_InsertFrame(idx);
+			Session_SetFrame(idx);
+			Session_UnlockFrames();
+		}
+		else if (Item == btn_rem)
+		{
+			Session_LockFrames();
+			Session_RemoveFrame(Session_ActiveFrame());
+			Session_UnlockFrames();
 		}
 		else if (Item == btn_play)
 		{
+			Mutex_Lock(mtx_play);
 			bPlaying = !bPlaying;
-			if (bPlaying)
-				Thread_Resume(thread_play);
-			else
-				Thread_Suspend(thread_play);
 			Window_Item_SetText(btn_play, bPlaying ? ICON_STOP : ICON_PLAY);
+			Mutex_Unlock(mtx_play);
+			if (!bPlaying && thread_play)
+			{
+				Thread_Wait(thread_play, 0); // Make sure mutexes are released
+				Thread_Destroy(thread_play);
+				thread_play = 0;
+			}
+			else
+				thread_play = Thread_Create(&PlayThread, 0);
 		}
 		else if (Item == bBrush || Item == bEraser)
 		{
@@ -243,7 +304,6 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 			if (bConfirm)
 			{
 				int w = Window_Item_GetValuei(int_width), h = Window_Item_GetValuei(int_height);
-				Project_Init(w, h, picker_bkg->color);
 				ResetProject();
 				Window_Show(wnd_prop, 0);
 			}
@@ -257,24 +317,51 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 
 int PlayThread(void* UserData)
 {
-	// HAHAHA ULTIMATE THREAD UNSAFETY, WinAPI just happens to already make most of this okay
+	Session_LockFrames();
 	while (1) // xddddddd
 	{
-		int frame = Window_Item_GetValuei(int_frame);
-		SetFrame(frame + 1);
+		Mutex_Lock(mtx_play);
+		char stop = !bPlaying;
+		Mutex_Unlock(mtx_play);
+
+		if (stop)
+			break;
+
+		Session_SetFrame(Session_ActiveFrameIndex() + 1);
 		Thread_Current_Sleep(1000 / Window_Item_GetValuei(int_fps));
 	}
+	Session_UnlockFrames();
 	return 0;
+}
+
+void OnSeshMsg(int Msg, UID Object)
+{
+	switch (Msg)
+	{
+	case SessionMsg_UserStrokeAdd:
+	case SessionMsg_UserStrokeRedo:
+	case SessionMsg_UserStrokeUndo:
+		Window_Redraw(wnd_main, 0);
+		break;
+	case SessionMsg_ChangedFPS:
+		Window_Item_SetValuei(int_fps, my_sesh.fps);
+		break;
+	case SessionMsg_ChangedFrame:
+		Window_Item_SetValuei(int_frame, Session_ActiveFrame());
+		Window_Redraw(wnd_main, 0);
+		break;
+	case SessionMsg_ChangedFrameCount:
+		Window_IntBox_SetRange(int_frame, 0, Session_FrameCount() - 1);
+		break;
+	}
 }
 
 int main()
 {
 	printf("Hello from C\n");
 
-	Project_Init(600, 400, 0xFFFFFF);
-
 	WindowCreationArgs args = { 0 };
-	args.width = my_project.width, args.height = my_project.height + 35;
+	args.width = 600, args.height = 400 + 35;
 	args.x = args.y = -1;
 	args.sztitle = L"ouchy owwy ouch";
 	args.visible = 1;
@@ -326,8 +413,6 @@ int main()
 	Window_IntBox_SetRange(int_brush, 1, 1000);
 	SetTool(&tool_brush);
 
-	ResetProject();
-
 	memset(&args, 0, sizeof(args));
 	args.width = 175, args.height = 140;
 	args.sztitle = L"Properties";
@@ -357,19 +442,22 @@ int main()
 
 	Window_IntBox_SetRange(int_width, 1, SHRT_MAX - 1);
 	Window_IntBox_SetRange(int_height, 1, SHRT_MAX - 1);
-	Window_Item_SetValuei(int_width, 1);
-	Window_Item_SetValuei(int_height, 1);
+	Window_Item_SetValuei(int_width, 600);
+	Window_Item_SetValuei(int_height, 400);
 
-	thread_play = Thread_Create(&PlayThread, 0);
+	my_sesh.on_seshmsg = &OnSeshMsg;
+	ResetProject();
+	mtx_play = Mutex_Create();
 
 	return Window_RunAll();
 }
 
 void ResetProject()
 {
-	FrameList_Reset();
-	Window_IntBox_SetRange(int_frame, 0, my_project._frames->count - 1);
-	Window_Item_SetValuei(int_frame, 0);
-	tool_eraser.Color = my_project.bkgcol;
+	int width = Window_Item_GetValuei(int_width), height = Window_Item_GetValuei(int_height);
+	Session_Init(picker_bkg->color, width, height, Window_Item_GetValuei(int_fps));
+	//Window_IntBox_SetRange(int_frame, 0, my_sesh.frames->count - 1);
+	//Window_Item_SetValuei(int_frame, 0);
+	tool_eraser.Color = my_sesh.bkgcol;
 	Window_Redraw(wnd_main, 0);
 }

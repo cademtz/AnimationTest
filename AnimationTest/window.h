@@ -1,14 +1,11 @@
 #pragma once
-
-#define COLOR_INT(r, g, b) (r | (g << 8) | (b << 16))
+#include "common.h"
 
 typedef struct _WndHandle* WndHandle;
 typedef struct _WndItem WndItem;
 typedef struct _ItemMsgData ItemMsgData;
 typedef struct _MenuItem MenuItem;
 typedef struct _BitmapData* BitmapHandle;
-typedef unsigned short UniChar; // UTF-16 UNICODE character
-typedef unsigned int IntColor; // 32-bit color, RGBA (in reverse order)
 
 typedef int(*MouseCallback)(WndHandle Wnd, int X, int Y, int MouseBtn, int Down);
 typedef int(*KeyboardCallback)(WndHandle Wnd, char Key, char bDown);
@@ -62,6 +59,7 @@ MenuItem* Window_Menu_Add_Child(WndHandle Wnd, MenuItem* Parent, const char* Nam
 
 extern void Window_Redraw(WndHandle Wnd, int* opt_xywh);
 extern void Window_Draw_Rect(WndHandle Wnd, int X, int Y, int W, int H, IntColor Color);
+extern void Window_Draw_Line(WndHandle Wnd, int X1, int Y1, int X2, int Y2, int Width, IntColor Color);
 extern void Window_Draw_Bitmap(WndHandle Wnd, BitmapHandle Bmp, int X, int Y);
 
 // Items
@@ -137,9 +135,6 @@ enum EKey
 	// Keys for numbers 0-9 and letters A-Z correspond with their ASCII values ('A', 'B', '7', etc...)
 };
 
-
-// ----- Private functions and variables ----- //
-
 enum EDialogType
 {
 	DialogType_Ok = 0,
@@ -147,6 +142,8 @@ enum EDialogType
 	DialogType_Error,
 	DialogType_Warning,
 };
+
+// ----- Private functions and variables ----- //
 
 // Windows
 

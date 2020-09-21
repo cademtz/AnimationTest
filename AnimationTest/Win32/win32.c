@@ -204,6 +204,21 @@ void Window_Draw_Rect(WndHandle Wnd, int X, int Y, int W, int H, IntColor Color)
 	FillRect(dc, &rect, brush);
 }
 
+void Window_Draw_Line(WndHandle Wnd, int X1, int Y1, int X2, int Y2, int Width, IntColor Color)
+{
+	HDC hdc = Wnd->_data->hdc;
+	int save = SaveDC(hdc);
+
+	HPEN pen = CreatePen(PS_SOLID, Width < 1 ? 1 : Width, Color);
+	SelectObject(hdc, pen);
+
+	MoveToEx(hdc, X1, Y1, 0);
+	LineTo(hdc, X2, Y2);
+
+	RestoreDC(hdc, save);
+	DeleteObject(pen);
+}
+
 void Window_Draw_Bitmap(WndHandle Wnd, BitmapHandle Bmp, int X, int Y)
 {
 	HDC hdc = Wnd->_data->hdc;

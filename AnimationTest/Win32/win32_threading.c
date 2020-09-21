@@ -8,6 +8,10 @@ typedef struct _OSThreadImpl
 	void* userdat;
 } OSThread;
 
+typedef struct _OSMutexImpl {
+	int unused;
+};
+
 DWORD WINAPI DispatchThread(OSThread* Thread) {
 	return Thread->start(Thread->userdat);
 }
@@ -30,8 +34,16 @@ void Thread_Suspend(ThreadHandle Thread) {
 	SuspendThread(Thread->hThread);
 }
 
+char Thread_Wait(ThreadHandle Thread, int* opt_outReturn)
+{
+	WaitForSingleObject((HANDLE)Thread, INFINITE);
+	if (opt_outReturn)
+		return Thread_GetReturn(Thread, opt_outReturn);
+	return 1;
+}
+
 void Thread_Terminate(ThreadHandle Thread) {
-	TerminateThread(Thread->hThread, -1);
+	TerminateThread((HANDLE)Thread, -1);
 }
 
 char Thread_GetReturn(ThreadHandle Thread, int* outReturn)
@@ -58,4 +70,30 @@ void Thread_Current_Sleep(unsigned int Milliseconds) {
 
 void Thread_Current_Exit(int ThreadReturn) {
 	ExitThread(ThreadReturn);
+}
+
+MutexHandle Mutex_Create() {
+	return (MutexHandle)CreateMutex(0, 0, 0);
+}
+
+void Mutex_Destroy(MutexHandle Mutex) {
+	CloseHandle((HANDLE)Mutex);
+}
+
+void Mutex_Lock(MutexHandle Mutex)
+{
+	DWORD result = WaitForSingleObject((HANDLE)Mutex, INFINITE);
+	if (result != WAIT_OBJECT_0)
+		printf("[ERROR] Mutex %p failed to lock: %X\n", Mutex, result);
+}
+
+void Mutex_Unlock(MutexHandle Mutex)
+{
+	if (!ReleaseMutex((HANDLE)Mutex))
+	{
+		DWORD code = GetLastError();
+		char buf[256];
+		FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, code, 0, &buf, sizeof(buf), 0);
+		printf("[ERROR] 0x%X, Failed to release mutex %p: %s\n", code, Mutex, buf);
+	}
 }

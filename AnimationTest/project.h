@@ -4,47 +4,38 @@
 typedef struct _FrameData FrameData;
 typedef struct _FrameList FrameList;
 typedef struct _FrameItem FrameItem;
-typedef unsigned int UID; // Unique ID
+typedef struct _UserStroke UserStroke;
 
-typedef struct _Project
-{
-	unsigned int width, height;
-	IntColor bkgcol;
-	FrameList* _frames;
-	FrameItem* frame_active;
-} Project;
+FrameList* FrameList_Create();
+void FrameList_Destroy(FrameList* List);
 
-extern Project my_project;
+FrameItem* FrameList_Next(FrameList* List, FrameItem* Item);
+FrameItem* FrameList_At(FrameList* List, int Index);
 
-void Project_Init(int Width, int Height, IntColor BkgCol);
-void Project_ChangeFrame(int Index);
-void Project_InsertFrame(int Index);
+void FrameList_Add(FrameList* List, FrameData* Data);
+void FrameList_Insert(FrameList* List, FrameData* Data, int Index);
 
-void FrameList_Reset();
+FrameItem* FrameList_Remove(FrameList* List, FrameItem* Item);
+FrameData* FrameList_Remove_At(FrameList* List, int Index);
+char FrameList_IsDataUsed(FrameList* List, FrameData* Data);
 
-FrameItem* FrameList_Next(FrameItem* Item);
-FrameItem* FrameList_At(int Index);
-FrameItem* FrameList_FindUID(UID UId);
+void FrameItem_Destroy(FrameItem* Frame);
 
-void FrameList_Add(FrameData* Data);
-void FrameList_Insert(FrameData* Data, int Index);
-
-FrameItem* FrameList_Remove(FrameItem* Item);
-FrameItem* FrameList_Remove_At(int Index);
-
-FrameData* FrameData_Create();
+FrameData* FrameData_Create(unsigned int Width, unsigned int Height, IntColor BkgColor);
 void FrameData_Destroy(FrameData* Data);
-void Frame_Destroy(FrameItem* Frame);
+
+void FrameData_AddStroke(FrameData* Data, UserStroke* Stroke);
+UserStroke* FrameData_RemoveStroke(FrameData* Data, UserStroke* Stroke);
 
 typedef struct _FrameData
 {
 	BitmapHandle bmp;
+	BasicList* strokes;
 } FrameData;
 
 typedef struct _FrameItem
 {
 	struct _FrameItem* _next;
-	UID uid;
 	FrameData* data;
 } FrameItem;
 

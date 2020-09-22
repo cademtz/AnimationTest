@@ -66,7 +66,7 @@ int OnMouse(WndHandle Wnd, int X, int Y, int MouseBtn, int Down)
 	{
 	case MouseBtn_Left:
 		Mutex_Lock(mtx_play);
-		if (bPlaying)
+		if (!bPlaying)
 			Session_LockFrames();
 		FrameItem* active = Session_ActiveFrame();
 		if (active && Down && tool_active)
@@ -85,7 +85,8 @@ int OnMouse(WndHandle Wnd, int X, int Y, int MouseBtn, int Down)
 				NetUser_EndStroke(user_local);
 			Session_UnlockUsers();
 		}
-		Session_UnlockFrames();
+		if (!bPlaying)
+			Session_UnlockFrames();
 		Mutex_Unlock(mtx_play);
 		break;
 	case MoustBtn_Middle:
@@ -239,23 +240,39 @@ int OnWndMsg(WndHandle Wnd, int WndMsg)
 	return WndCallback_None;
 }
 
+char bItemMsg = 0;
+MutexHandle mtx_items;
+
 int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 {
+	Mutex_Lock(mtx_items);
+	bItemMsg = 1;
+	Mutex_Unlock(mtx_items);
 	switch (ItemMsg)
 	{
 	case ItemMsg_ValueChanged:
 		if (Item == int_frame)
 		{
 			Mutex_Lock(mtx_play);
-			char playing = bPlaying;
-			Mutex_Unlock(mtx_play);
-			if (!playing)
-			{
+			if (!bPlaying)
 				Session_LockFrames();
-				Session_SetFrame(Data->newval.i);
+			Session_SetFrame(Data->newval.i);
+			if (!bPlaying)
 				Session_UnlockFrames();
-				Window_Redraw(int_frame->wnd, 0);
-			}
+			Window_Redraw(int_frame->wnd, 0);
+			Mutex_Unlock(mtx_play);
+		}
+		else if (Item == int_fps)
+		{
+			Mutex_Lock(mtx_play);
+			if (!bPlaying)
+				Session_LockFrames();
+
+			Session_SetFPS(Data->newval.i);
+
+			if (!bPlaying)
+				Session_UnlockFrames();
+			Mutex_Unlock(mtx_play);
 		}
 		else if (Item == int_brush)
 			if (tool_active)
@@ -276,7 +293,7 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 		else if (Item == btn_rem)
 		{
 			Session_LockFrames();
-			Session_RemoveFrame(Session_ActiveFrame());
+			Session_RemoveFrame(Session_ActiveFrameIndex());
 			Session_UnlockFrames();
 		}
 		else if (Item == btn_play)
@@ -328,7 +345,9 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 		else if (Item == btn_cancel) 
 			Window_Show(wnd_prop, 0);
 	}
-
+	Mutex_Lock(mtx_items);
+	bItemMsg = 0;
+	Mutex_Unlock(mtx_items);
 	return WndCallback_None;
 }
 
@@ -353,6 +372,9 @@ int PlayThread(void* UserData)
 
 void OnSeshMsg(int Msg, UID Object)
 {
+	Mutex_Lock(mtx_items);
+	char item = bItemMsg;
+	Mutex_Unlock(mtx_items);
 	switch (Msg)
 	{
 	case SessionMsg_UserStrokeAdd:
@@ -361,7 +383,8 @@ void OnSeshMsg(int Msg, UID Object)
 		Window_Redraw(wnd_main, 0);
 		break;
 	case SessionMsg_ChangedFPS:
-		Window_Item_SetValuei(int_fps, my_sesh.fps);
+		if (!item)
+			Window_Item_SetValuei(int_fps, my_sesh.fps);
 		break;
 	case SessionMsg_ChangedFrame:
 		Window_Item_SetValuei(int_frame, Session_ActiveFrameIndex());
@@ -376,6 +399,9 @@ void OnSeshMsg(int Msg, UID Object)
 int main()
 {
 	printf("Hello from C\n");
+
+	mtx_play = Mutex_Create();
+	mtx_items = Mutex_Create();
 
 	WindowCreationArgs args = { 0 };
 	args.width = 600, args.height = 400 + 35;
@@ -424,7 +450,6 @@ int main()
 	int_brush = Window_Item_Add(wnd_main, ItemType_IntBox, nextx, btn_add->y, 50, btn_add->height, L"int_width");
 
 	Window_IntBox_SetRange(int_fps, 1, 100);
-	Window_Item_SetValuei(int_fps, 24);
 
 	Window_Item_SetValuei(bBrush, 1);
 	Window_IntBox_SetRange(int_brush, 1, 1000);
@@ -464,7 +489,6 @@ int main()
 
 	my_sesh.on_seshmsg = &OnSeshMsg;
 	ResetProject();
-	mtx_play = Mutex_Create();
 
 	return Window_RunAll();
 }
@@ -472,7 +496,7 @@ int main()
 void ResetProject()
 {
 	int width = Window_Item_GetValuei(int_width), height = Window_Item_GetValuei(int_height);
-	Session_Init(picker_bkg->color, width, height, Window_Item_GetValuei(int_fps));
+	Session_Init(picker_bkg->color, width, height, 24);
 	//Window_IntBox_SetRange(int_frame, 0, my_sesh.frames->count - 1);
 	//Window_Item_SetValuei(int_frame, 0);
 	tool_eraser.Color = my_sesh.bkgcol;

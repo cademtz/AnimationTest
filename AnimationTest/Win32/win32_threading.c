@@ -1,5 +1,6 @@
 #include "../threading.h"
 #include <Windows.h>
+#include <stdio.h>
 
 typedef struct _OSThreadImpl
 {
@@ -36,14 +37,14 @@ void Thread_Suspend(ThreadHandle Thread) {
 
 char Thread_Wait(ThreadHandle Thread, int* opt_outReturn)
 {
-	WaitForSingleObject((HANDLE)Thread, INFINITE);
+	WaitForSingleObject(Thread->hThread, INFINITE);
 	if (opt_outReturn)
 		return Thread_GetReturn(Thread, opt_outReturn);
 	return 1;
 }
 
 void Thread_Terminate(ThreadHandle Thread) {
-	TerminateThread((HANDLE)Thread, -1);
+	TerminateThread(Thread->hThread, -1);
 }
 
 char Thread_GetReturn(ThreadHandle Thread, int* outReturn)
@@ -84,7 +85,10 @@ void Mutex_Lock(MutexHandle Mutex)
 {
 	DWORD result = WaitForSingleObject((HANDLE)Mutex, INFINITE);
 	if (result != WAIT_OBJECT_0)
-		printf("[ERROR] Mutex %p failed to lock: %X\n", Mutex, result);
+	{
+		printf("[ERROR] 0x%X, Failed to lock Mutex %p\n", result, Mutex);
+		DebugBreak();
+	}
 }
 
 void Mutex_Unlock(MutexHandle Mutex)
@@ -94,8 +98,7 @@ void Mutex_Unlock(MutexHandle Mutex)
 		DWORD code = GetLastError();
 		char buf[256];
 		FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, code, 0, &buf, sizeof(buf), 0);
-		//printf("[ERROR] 0x%X, Failed to release mutex %p: %s\n", code, Mutex, buf);
+		printf("[ERROR] 0x%X, Failed to release mutex %p: %s\n", code, Mutex, buf);
+		DebugBreak();
 	}
-	//else
-		//printf("yay released mutex :D\n");
 }

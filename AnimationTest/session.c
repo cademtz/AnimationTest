@@ -52,6 +52,12 @@ void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsi
 	Mutex_Unlock(my_sesh.mtx_users);
 }
 
+void Session_SetFPS(int FPS)
+{
+	my_sesh.fps = FPS;
+	my_sesh.on_seshmsg(SessionMsg_ChangedFPS, 0);
+}
+
 void Session_SetFrame(int Index)
 {
 	if (Index >= my_sesh._frames->count)
@@ -74,7 +80,7 @@ void Session_InsertFrame(int Index)
 
 void Session_RemoveFrame(int Index)
 {
-	if (!my_sesh._frames->count)
+	if (my_sesh._frames->count < 2)
 		return;
 
 	FrameData* data = FrameList_Remove_At(my_sesh._frames, Index);
@@ -146,7 +152,8 @@ void NetUser_AddToStroke(NetUser* User, const Vec2* Point)
 	my_sesh.on_seshmsg(SessionMsg_UserStrokeAdd, User->id);
 }
 
-void NetUser_EndStroke(NetUser* User) {
+void NetUser_EndStroke(NetUser* User)
+{
 	User->bDrawing = 0;
 	my_sesh.on_seshmsg(SessionMsg_UserStrokeEnd, User->id);
 }

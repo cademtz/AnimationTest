@@ -28,6 +28,7 @@ extern NetUser* user_local;
 
 void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsigned char fps);
 
+void Session_SetFPS(int FPS);
 void Session_SetFrame(int Index);
 void Session_InsertFrame(int Index);
 void Session_RemoveFrame(int Index);

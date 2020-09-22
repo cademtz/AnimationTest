@@ -637,7 +637,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			WndItem* item = Item_FindId(wnd, hdr->hwndFrom);
 			if (item && wnd->_args.on_itemmsg)
 			{
-				ItemMsgData data = { 0 };
+				/*ItemMsgData data = { 0 };
 				switch (hdr->code)
 				{
 				case UDN_DELTAPOS:
@@ -656,7 +656,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					wnd->_args.on_itemmsg(item, ItemMsg_ValueChanged, &data);
 					break;
 				}
-				}
+				}*/
 			}
 			break;
 		}

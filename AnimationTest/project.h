@@ -24,13 +24,20 @@ void FrameItem_Destroy(FrameItem* Frame);
 FrameData* FrameData_Create(unsigned int Width, unsigned int Height, IntColor BkgColor);
 void FrameData_Destroy(FrameData* Data);
 
-void FrameData_AddStroke(FrameData* Data, UserStroke* Stroke);
-UserStroke* FrameData_RemoveStroke(FrameData* Data, UserStroke* Stroke);
+void FrameData_AddStroke(FrameData* Data, const UserStroke* Stroke);
+UserStroke* FrameData_RemoveStroke(FrameData* Data, const UserStroke* Stroke);
+void FrameData_UpdateStroke(FrameData* Data, const UserStroke* Stroke);
+void FrameData_ApplyStroke(FrameData* Data, const UserStroke* Stroke);
+
+void _FrameData_DrawStroke(BitmapHandle Bmp, const UserStroke* Stroke, int StartPoint);
+void _FrameData_RedrawSave(FrameData* Data);
 
 typedef struct _FrameData
 {
 	BitmapHandle bmp;
+	BitmapHandle saved;
 	BasicList* strokes;
+	int last_point;
 } FrameData;
 
 typedef struct _FrameItem

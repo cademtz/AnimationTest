@@ -19,13 +19,13 @@ void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsi
 	if (my_sesh.users)
 	{
 		for (BasicListItem* next = 0; next = BasicList_Next(my_sesh.users, next);)
-			free(next->data); // NetUser*
+			NetUser_Destroy((NetUser*)next->data);
 		BasicList_Destroy(my_sesh.users);
 	}
 	if (my_sesh._strokes)
 	{
 		for (BasicListItem* next = 0; next = BasicList_Next(my_sesh._strokes, next);)
-			free(next->data); // UserStroke*
+			UserStroke_Destroy((UserStroke*)next->data); // UserStroke*
 		BasicList_Destroy(my_sesh._strokes);
 	}
 	if (my_sesh._frames)
@@ -83,9 +83,17 @@ void Session_RemoveFrame(int Index)
 	if (my_sesh._frames->count < 2)
 		return;
 
-	FrameData* data = FrameList_Remove_At(my_sesh._frames, Index);
-	if (!FrameList_IsDataUsed(my_sesh._frames, data))
-		FrameData_Destroy(data);
+	FrameData* framedat = FrameList_Remove_At(my_sesh._frames, Index);
+	if (!FrameList_IsDataUsed(my_sesh._frames, framedat))
+	{	// Make sure these strokes are removed everywhere
+		for (BasicListItem* next = 0; next = BasicList_Next(framedat->strokes, next);)
+		{
+			UserStroke* stroke = (UserStroke*)next->data;
+			BasicList_Remove_FirstOf(my_sesh._strokes, stroke);
+			BasicList_Remove_FirstOf(stroke->user->strokes, stroke);
+		}
+		FrameData_Destroy(framedat);
+	}
 
 	my_sesh.on_seshmsg(SessionMsg_ChangedFrame, 0);
 
@@ -96,6 +104,15 @@ void Session_RemoveFrame(int Index)
 		my_sesh._frame_active = FrameList_At(my_sesh._frames, my_sesh._index_active);
 		my_sesh.on_seshmsg(SessionMsg_ChangedFrameCount, 0);
 	}
+}
+
+int Session_FrameData_GetIndex(const FrameData* FrameDat)
+{
+	int i = 0;
+	for (FrameItem* next = 0; next = FrameList_Next(my_sesh._frames, next); i++)
+		if (next->data == FrameDat)
+			return i;
+	return -1;
 }
 
 NetUser* Session_GetUser(UID IdUser)
@@ -129,7 +146,7 @@ void NetUser_Destroy(NetUser* User)
 	free(User);
 }
 
-void NetUser_BeginStroke(NetUser* User, const Vec2* Point, const DrawTool* Tool, FrameData* Frame)
+void NetUser_BeginStroke(NetUser* User, const Vec2* Point, const DrawTool* Tool, FrameData* FrameDat)
 {
 	User->bDrawing = 1;
 
@@ -138,17 +155,20 @@ void NetUser_BeginStroke(NetUser* User, const Vec2* Point, const DrawTool* Tool,
 		UserStroke_Destroy((UserStroke*)next->data);
 	BasicList_Clear(User->undone);
 
-	UserStroke* stroke = UserStroke_Create(User, Tool, Frame);
+	UserStroke* stroke = UserStroke_Create(User, Tool, FrameDat);
 	UserStroke_AddPoint(stroke, Point);
 	BasicList_Add(User->strokes, stroke);
-	BasicList_Add(Frame->strokes, stroke);
+	BasicList_Add(my_sesh._strokes, stroke);
+	FrameData_AddStroke(FrameDat, stroke);
 
 	my_sesh.on_seshmsg(SessionMsg_UserStrokeAdd, User->id);
 }
 
 void NetUser_AddToStroke(NetUser* User, const Vec2* Point)
 {
-	UserStroke_AddPoint((UserStroke*)User->strokes->tail->data, Point);
+	UserStroke* stroke = (UserStroke*)User->strokes->tail->data;
+	UserStroke_AddPoint(stroke, Point);
+	FrameData_UpdateStroke(stroke->framedat, stroke);
 	my_sesh.on_seshmsg(SessionMsg_UserStrokeAdd, User->id);
 }
 
@@ -158,7 +178,7 @@ void NetUser_EndStroke(NetUser* User)
 	my_sesh.on_seshmsg(SessionMsg_UserStrokeEnd, User->id);
 }
 
-void NetUser_UndoStroke(NetUser* User)
+char NetUser_UndoStroke(NetUser* User)
 {
 	if (!User->bDrawing && User->strokes->count)
 	{
@@ -166,10 +186,12 @@ void NetUser_UndoStroke(NetUser* User)
 		BasicList_Add(User->undone, stroke);
 		FrameData_RemoveStroke(stroke->framedat, stroke);
 		my_sesh.on_seshmsg(SessionMsg_UserStrokeUndo, User);
+		return 1;
 	}
+	return 0;
 }
 
-void NetUser_RedoStroke(NetUser* User)
+char NetUser_RedoStroke(NetUser* User)
 {
 	if (!User->bDrawing && User->undone->count)
 	{
@@ -177,7 +199,9 @@ void NetUser_RedoStroke(NetUser* User)
 		BasicList_Add(User->strokes, stroke);
 		FrameData_AddStroke(stroke->framedat, stroke);
 		my_sesh.on_seshmsg(SessionMsg_UserStrokeRedo, User);
+		return 1;
 	}
+	return 0;
 }
 
 UserStroke* UserStroke_Create(NetUser* User, const DrawTool* Tool, FrameData* Frame)

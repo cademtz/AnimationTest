@@ -487,6 +487,19 @@ void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int W, int H, IntColor Col
 	DeleteDC(dc);
 }
 
+void Bitmap_Draw_Bitmap(BitmapHandle Bmp, int X, int Y, BitmapHandle Src)
+{
+	HDC dc = CreateCompatibleDC(0);
+	SelectObject(dc, Bmp->_data->hBmp);
+
+	HDC dcSrc = CreateCompatibleDC(0);
+	SelectObject(dcSrc, Src->_data->hBmp);
+
+	BitBlt(dc, X, Y, Src->width, Src->height, dcSrc, 0, 0, SRCCOPY);
+	DeleteDC(dcSrc);
+	DeleteDC(dc);
+}
+
 void HandleMouse(WndHandle Wnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	int x = LOWORD(lParam), y = HIWORD(lParam);

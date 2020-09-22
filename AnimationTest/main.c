@@ -156,10 +156,26 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 			if (!bPlaying)
 			{
 				Session_LockFrames();
+				UserStroke* stroke = 0;
 				if (Key == 'Z')
-					NetUser_UndoStroke(user_local);
+				{
+					if (NetUser_UndoStroke(user_local))
+						stroke = (UserStroke*)user_local->undone->tail->data;
+				}
 				else
-					NetUser_RedoStroke(user_local);
+				{
+					if (NetUser_RedoStroke(user_local))
+						stroke = (UserStroke*)user_local->strokes->tail->data;
+				}
+
+				if (stroke)
+				{
+					// Present the acted-on frame to the user
+					FrameItem* active = Session_ActiveFrame();
+					if (!active || active->data != stroke->framedat)
+						Session_SetFrame(Session_FrameData_GetIndex(stroke->framedat));
+				}
+
 				Session_UnlockFrames();
 			}
 			Mutex_Unlock(mtx_play);
@@ -202,31 +218,7 @@ int OnWndMsg(WndHandle Wnd, int WndMsg)
 
 			FrameItem* frame = Session_ActiveFrame();
 			if (frame)
-			{
-				Window_Draw_Bitmap(Wnd, frame->data->bmp, canvasX, canvasY);
-				for (BasicListItem* next = 0; next = BasicList_Next(frame->data->strokes, next);)
-				{
-					UserStroke* stroke = (UserStroke*)next->data;
-					Vec2* prev = (Vec2*)stroke->points->head->data;
-					DrawTool* dtool = &stroke->tool;
-
-					int x1 = prev->x + canvasX, y1 = prev->y + canvasY;
-					int x2 = x1, y2 = y1;
-
-					if (stroke->points->count > 1)
-					{
-						for (BasicListItem* next = stroke->points->head; next = BasicList_Next(stroke->points, next);)
-						{
-							x1 = x2, y1 = y2;
-							Vec2* vec = (Vec2*)next->data;
-							x2 = vec->x + canvasX, y2 = vec->y + canvasY;
-							Window_Draw_Line(wnd_main, x1, y1, x2, y2, dtool->Width, dtool->Color);
-						}
-					}
-					else
-						Window_Draw_Line(wnd_main, x1, y1, x2, y2, dtool->Width, dtool->Color);
-				}
-			}
+				Window_Draw_Bitmap(Wnd, frame->data->saved, canvasX, canvasY);
 
 			if (!bPlaying)
 				Session_UnlockFrames();

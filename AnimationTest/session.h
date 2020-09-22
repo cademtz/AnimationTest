@@ -32,6 +32,7 @@ void Session_SetFPS(int FPS);
 void Session_SetFrame(int Index);
 void Session_InsertFrame(int Index);
 void Session_RemoveFrame(int Index);
+int Session_FrameData_GetIndex(const FrameData* FrameDat);
 inline int Session_FrameCount() { return my_sesh._frames->count; }
 inline FrameItem* Session_ActiveFrame() { return my_sesh._frame_active; }
 inline int Session_ActiveFrameIndex() { return my_sesh._index_active; }
@@ -63,9 +64,8 @@ void NetUser_Destroy(NetUser* User);
 void NetUser_BeginStroke(NetUser* User, const Vec2* Point, const DrawTool* Tool, FrameData* Frame);
 void NetUser_AddToStroke(NetUser* User, const Vec2* Point);
 void NetUser_EndStroke(NetUser* User);
-void NetUser_UndoStroke(NetUser* User);
-void NetUser_RedoStroke(NetUser* User);
-void NetUser_RemoveStroke(UserStroke* Stroke); // Removes from both active & undone list
+char NetUser_UndoStroke(NetUser* User);
+char NetUser_RedoStroke(NetUser* User);
 
 // Actions
 

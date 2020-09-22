@@ -148,7 +148,9 @@ FrameData* FrameData_Create(unsigned int Width, unsigned int Height, IntColor Bk
 
 	data->strokes = BasicList_Create();
 	data->bmp = Bitmap_Create(Width, Height);
+	data->saved = Bitmap_Create(Width, Height);
 	Bitmap_Draw_Rect(data->bmp, 0, 0, data->bmp->width, data->bmp->height, BkgColor);
+	Bitmap_Draw_Bitmap(data->saved, 0, 0, data->bmp);
 
 	return data;
 }
@@ -158,14 +160,88 @@ void FrameData_Destroy(FrameData* Data)
 	for (BasicListItem* next = 0; next = BasicList_Next(Data->strokes, next);)
 		UserStroke_Destroy((UserStroke*)next->data);
 	BasicList_Destroy(Data->strokes);
+	Bitmap_Destroy(Data->saved);
 	Bitmap_Destroy(Data->bmp);
 	free(Data);
 }
 
-void FrameData_AddStroke(FrameData* Data, UserStroke* Stroke) {
+void FrameData_AddStroke(FrameData* Data, const UserStroke* Stroke)
+{
 	BasicList_Add(Data->strokes, Stroke);
+	_FrameData_DrawStroke(Data->saved, Stroke, 0);
+	Data->last_point = Stroke->points->count - 1;
 }
 
-UserStroke* FrameData_RemoveStroke(FrameData* Data, UserStroke* Stroke) {
-	return (UserStroke*)BasicList_Remove_FirstOf(Data->strokes, Stroke);
+UserStroke* FrameData_RemoveStroke(FrameData* Data, const UserStroke* Stroke)
+{
+	UserStroke* removed = (UserStroke*)BasicList_Remove_FirstOf(Data->strokes, Stroke);
+	_FrameData_RedrawSave(Data);
+	return removed;
+}
+
+void FrameData_UpdateStroke(FrameData* Data, const UserStroke* Stroke)
+{
+	int idx = BasicList_IndexOfFirst(Data->strokes, Stroke);
+	if (idx == -1)
+		return;
+
+	if (idx == Data->strokes->count - 1) // Continue last drawn point in last stroke
+	{
+		_FrameData_DrawStroke(Data->saved, Stroke, Data->last_point);
+		Data->last_point = Stroke->points->count - 1;
+	}
+	else
+		_FrameData_RedrawSave(Data);
+}
+
+void FrameData_ApplyStroke(FrameData* Data, const UserStroke* Stroke)
+{
+	int idx = BasicList_IndexOfFirst(Data->strokes, Stroke);
+	if (idx == -1)
+		return;
+
+	BasicList_Remove_At(Data->strokes, idx);
+	_FrameData_DrawStroke(Data->bmp, Stroke, 0);
+
+	if (idx != 0) // A stroke has been re-ordered
+		_FrameData_RedrawSave(Data);
+}
+
+void _FrameData_DrawStroke(BitmapHandle Bmp, const UserStroke* Stroke, int StartPoint)
+{
+	DrawTool* tool = &Stroke->tool;
+
+	Vec2* vec = (Vec2*)Stroke->points->head->data;
+	int x1 = vec->x, y1 = vec->y, iPoint = 0;
+
+	if (Stroke->points->count == 1)
+		Bitmap_Draw_Line(Bmp, x1, y1, x1, y1, tool->Width, tool->Color);
+	else
+	{
+		iPoint++;
+		for (BasicListItem* next = Stroke->points->head; next = BasicList_Next(Stroke->points, next); iPoint++)
+		{
+			if (iPoint < StartPoint)
+				continue;
+			
+			vec = (Vec2*)next->data;
+			if (iPoint == StartPoint)
+			{
+				x1 = vec->x, y1 = vec->y;
+				if (BasicList_Next(Stroke->points, next))
+					continue; // Not a single point, so we want 'iPoint' to act as the previous point
+			}
+
+			int x2 = vec->x, y2 = vec->y;
+			Bitmap_Draw_Line(Bmp, x1, y1, x2, y2, tool->Width, tool->Color);
+			x1 = x2, y1 = y2;
+		}
+	}
+}
+
+void _FrameData_RedrawSave(FrameData* Data)
+{
+	Bitmap_Draw_Bitmap(Data->saved, 0, 0, Data->bmp);
+	for (BasicListItem* next = 0; next = BasicList_Next(Data->strokes, next);)
+		_FrameData_DrawStroke(Data->saved, (UserStroke*)next->data, 0);
 }

@@ -52,8 +52,8 @@ char Window_SetPos(WndHandle Wnd, int X, int Y);
 char Window_GetSize(WndHandle Wnd, int* Width, int* Height);
 char Window_SetSize(WndHandle Wnd, int Width, int Height);
 
-MenuItem* Window_Menu_Add(WndHandle Wnd, const char* Name);
-MenuItem* Window_Menu_Add_Child(WndHandle Wnd, MenuItem* Parent, const char* Name);
+MenuItem* Window_Menu_Add(WndHandle Wnd, const UniChar* Name);
+MenuItem* Window_Menu_Add_Child(WndHandle Wnd, MenuItem* Parent, const UniChar* Name);
 
 // Drawing
 

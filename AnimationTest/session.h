@@ -3,13 +3,14 @@
 #include "threading.h"
 
 typedef struct _NetUser NetUser;
+typedef struct _NetInterface NetInterface;
 typedef void(*SessionCallback)(int SessionMsg, UID Object);
 
 // Session
 
 typedef struct _NetSession
 {
-	SessionCallback on_seshmsg; // Required
+	SessionCallback on_seshmsg;
 	MutexHandle mtx_frames; // Lock when reading frame data
 	MutexHandle mtx_users; // Lock when reading (NON-drawing related) user data
 
@@ -32,7 +33,10 @@ void Session_SetFPS(int FPS);
 void Session_SetFrame(int Index);
 void Session_InsertFrame(int Index);
 void Session_RemoveFrame(int Index);
+FrameItem* Session_GetFrame(int Index);
 int Session_FrameData_GetIndex(const FrameData* FrameDat);
+void Session_AddUser(NetUser* User);
+void Session_RemoveUser(NetUser* User);
 inline int Session_FrameCount() { return my_sesh._frames->count; }
 inline FrameItem* Session_ActiveFrame() { return my_sesh._frame_active; }
 inline int Session_ActiveFrameIndex() { return my_sesh._index_active; }
@@ -50,10 +54,12 @@ inline void Session_UnlockUsers() { Mutex_Unlock(my_sesh.mtx_users); }
 
 // Users
 
+#define USERNAME_MAX 0x20
+
 typedef struct _NetUser
 {
 	UID id;
-	UniChar szName[32];
+	UniChar szName[USERNAME_MAX];
 	BasicList* strokes, * undone;
 	char bDrawing; // Actively adding to a stroke
 } NetUser;
@@ -84,6 +90,7 @@ void UserStroke_AddPoint(UserStroke* Stroke, const Vec2* Line);
 enum ESessionMsg
 {
 	SessionMsg_UserJoin,
+	SessionMsg_UserLeave,
 	SessionMsg_UserChat,
 
 	SessionMsg_UserStrokeUndo,
@@ -93,5 +100,38 @@ enum ESessionMsg
 
 	SessionMsg_ChangedFPS, 
 	SessionMsg_ChangedFrame,
-	SessionMsg_ChangedFrameCount,
+	SessionMsg_ChangedFramelist,
 };
+
+// Networking
+
+#define MAX_MSGLEN 0x400
+
+typedef struct _NetMsg
+{
+	long length;	// Network int
+	long seshmsg;	// Network int
+	char data[];
+} NetMsg;
+
+NetMsg* NetMsg_Create(int SessionMsg, int DataLen);
+void NetMsg_Destroy(NetMsg* Msg);
+
+// - A wrapper for the Session functions which chooses where user input is sent
+typedef struct _NetInterface
+{
+	void(*join)(const UniChar* szName);
+	void(*setFPS)(int FPS);
+	void(*setFrame)(int Index);
+	void(*insertFrame)(int Index);
+	void(*removeFrame)(int Index);
+	void(*chat)(const UniChar* szText);
+	void(*beginStroke)(NetUser* User, const Vec2* Point, const DrawTool* Tool, FrameData* FrameDat);
+	void(*addToStroke)(NetUser* User, const Vec2* Point);
+	void(*endStroke)(NetUser* User);
+	void(*undoStroke)();
+	void(*redoStroke)();
+	void(*leave)();
+} NetInterface;
+
+extern NetInterface my_netint;

@@ -1,7 +1,9 @@
 #include "session.h"
+#include "sockets.h"
 
 NetSession my_sesh = { 0 };
 NetUser* user_local = 0;
+NetInterface my_netint = { 0 };
 
 void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsigned char FPS)
 {
@@ -23,29 +25,23 @@ void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsi
 		BasicList_Destroy(my_sesh.users);
 	}
 	if (my_sesh._strokes)
-	{
-		for (BasicListItem* next = 0; next = BasicList_Next(my_sesh._strokes, next);)
-			UserStroke_Destroy((UserStroke*)next->data); // UserStroke*
 		BasicList_Destroy(my_sesh._strokes);
-	}
 	if (my_sesh._frames)
 		FrameList_Destroy(my_sesh._frames);
-	if (user_local)
-		NetUser_Destroy(user_local);
 
 	my_sesh._strokes = BasicList_Create();
 	my_sesh._frames = FrameList_Create();
 	my_sesh.users = BasicList_Create();
 
-	user_local = NetUser_Create(GenerateUID(), L"reynante_gamer512");
-	BasicList_Add(my_sesh.users, user_local);
+	//user_local = NetUser_Create(GenerateUID(), L"reynante_gamer512");
+	//BasicList_Add(my_sesh.users, user_local);
 
 	Session_InsertFrame(0);
 	Session_SetFrame(0);
 
-	my_sesh.on_seshmsg(SessionMsg_UserJoin, user_local->id);
+	//my_sesh.on_seshmsg(SessionMsg_UserJoin, user_local->id);
 	my_sesh.on_seshmsg(SessionMsg_ChangedFrame, 0);
-	my_sesh.on_seshmsg(SessionMsg_ChangedFrameCount, 0);
+	my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, 0);
 	my_sesh.on_seshmsg(SessionMsg_ChangedFPS, 0);
 
 	Mutex_Unlock(my_sesh.mtx_frames);
@@ -75,7 +71,7 @@ void Session_InsertFrame(int Index)
 	FrameData* data = FrameData_Create(my_sesh.width, my_sesh.height, my_sesh.bkgcol);
 	FrameList_Insert(my_sesh._frames, data, Index);
 
-	my_sesh.on_seshmsg(SessionMsg_ChangedFrameCount, 0);
+	my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, 0);
 }
 
 void Session_RemoveFrame(int Index)
@@ -102,8 +98,12 @@ void Session_RemoveFrame(int Index)
 	{
 		my_sesh._index_active = count - 1;
 		my_sesh._frame_active = FrameList_At(my_sesh._frames, my_sesh._index_active);
-		my_sesh.on_seshmsg(SessionMsg_ChangedFrameCount, 0);
+		my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, 0);
 	}
+}
+
+FrameItem* Session_GetFrame(int Index) {
+	return FrameList_At(my_sesh._frames, Index);
 }
 
 int Session_FrameData_GetIndex(const FrameData* FrameDat)
@@ -113,6 +113,19 @@ int Session_FrameData_GetIndex(const FrameData* FrameDat)
 		if (next->data == FrameDat)
 			return i;
 	return -1;
+}
+
+void Session_AddUser(NetUser* User)
+{
+	BasicList_Add(my_sesh.users, User);
+	my_sesh.on_seshmsg(SessionMsg_UserJoin, User->id);
+}
+
+void Session_RemoveUser(NetUser* User)
+{
+	my_sesh.on_seshmsg(SessionMsg_UserLeave, User->id);
+	if (BasicList_Remove_FirstOf(my_sesh.users, User))
+		NetUser_Destroy(User);
 }
 
 NetUser* Session_GetUser(UID IdUser)
@@ -129,6 +142,7 @@ NetUser* Session_GetUser(UID IdUser)
 NetUser* NetUser_Create(UID Id, const UniChar* szName)
 {
 	NetUser* user = (NetUser*)malloc(sizeof(*user));
+	memset(user, 0, sizeof(*user));
 
 	user->id = Id;
 	wcscpy_s(user->szName, sizeof(user->szName) / sizeof(user->szName[0]), szName);
@@ -185,7 +199,7 @@ char NetUser_UndoStroke(NetUser* User)
 		UserStroke* stroke = BasicList_Pop(User->strokes);
 		BasicList_Add(User->undone, stroke);
 		FrameData_RemoveStroke(stroke->framedat, stroke);
-		my_sesh.on_seshmsg(SessionMsg_UserStrokeUndo, User);
+		my_sesh.on_seshmsg(SessionMsg_UserStrokeUndo, User->id);
 		return 1;
 	}
 	return 0;
@@ -198,7 +212,7 @@ char NetUser_RedoStroke(NetUser* User)
 		UserStroke* stroke = BasicList_Pop(User->undone);
 		BasicList_Add(User->strokes, stroke);
 		FrameData_AddStroke(stroke->framedat, stroke);
-		my_sesh.on_seshmsg(SessionMsg_UserStrokeRedo, User);
+		my_sesh.on_seshmsg(SessionMsg_UserStrokeRedo, User->id);
 		return 1;
 	}
 	return 0;
@@ -229,4 +243,19 @@ void UserStroke_AddPoint(UserStroke* Stroke, const Vec2* Point)
 	Vec2* point = (Vec2*)malloc(sizeof(*point));
 	*point = *Point;
 	BasicList_Add(Stroke->points, point);
+}
+
+NetMsg* NetMsg_Create(int SessionMsg, int DataLen)
+{
+	int len = sizeof(NetMsg) + DataLen;
+	NetMsg* msg = (NetMsg*)malloc(len);
+
+	msg->length = Net_htonl(len);
+	msg->seshmsg = Net_htonl(SessionMsg);
+
+	return msg;
+}
+
+void NetMsg_Destroy(NetMsg* Msg) {
+	free(Msg);
 }

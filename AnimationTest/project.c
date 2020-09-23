@@ -209,7 +209,7 @@ void FrameData_ApplyStroke(FrameData* Data, const UserStroke* Stroke)
 
 void _FrameData_DrawStroke(BitmapHandle Bmp, const UserStroke* Stroke, int StartPoint)
 {
-	DrawTool* tool = &Stroke->tool;
+	const DrawTool* tool = &Stroke->tool;
 
 	Vec2* vec = (Vec2*)Stroke->points->head->data;
 	int x1 = vec->x, y1 = vec->y, iPoint = 0;

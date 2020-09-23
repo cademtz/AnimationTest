@@ -61,7 +61,7 @@ char Window_SetSize(WndHandle Wnd, int Width, int Height)
 	return _Window_GetSetSize_Impl(Wnd, 0, wh);
 }
 
-MenuItem* Window_Menu_Add(WndHandle Wnd, const char* Name)
+MenuItem* Window_Menu_Add(WndHandle Wnd, const UniChar* Name)
 {
 	MenuItem* item = malloc(sizeof(*item));
 	memset(item, 0, sizeof(*item));
@@ -81,7 +81,7 @@ MenuItem* Window_Menu_Add(WndHandle Wnd, const char* Name)
 	return item;
 }
 
-MenuItem* Window_Menu_Add_Child(WndHandle Wnd, MenuItem* Parent, const char* Name)
+MenuItem* Window_Menu_Add_Child(WndHandle Wnd, MenuItem* Parent, const UniChar* Name)
 {
 	MenuItem* item = malloc(sizeof(*item));
 	memset(item, 0, sizeof(*item));

@@ -39,6 +39,15 @@
     <ClCompile Include="session.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Win32\win32_sockets.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="server.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="window.h">
@@ -62,7 +71,13 @@
     <ClInclude Include="session.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="network.h">
+    <ClInclude Include="sockets.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="server.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="client.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

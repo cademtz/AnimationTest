@@ -3,8 +3,11 @@
 #include <limits.h>
 #include "window.h"
 #include "threading.h"
+#include "sockets.h"
 #include "session.h"
 #include "colorpicker.h"
+#include "client.h"
+#include "server.h"
 
 // Totally not lazey
 #define ICON_PLAY L"\x25B6"
@@ -73,16 +76,16 @@ int OnMouse(WndHandle Wnd, int X, int Y, int MouseBtn, int Down)
 		{
 			Vec2 point = { X - canvasX, Y - canvasY };
 			if (Down > 1)
-				NetUser_AddToStroke(user_local, &point);
+				my_netint.addToStroke(user_local, &point);
 			else
-				NetUser_BeginStroke(user_local, &point, tool_active, active->data);
+				my_netint.beginStroke(user_local, &point, tool_active, active->data);
 			lLastX = X, lLastY = Y;
 		}
 		else if (!Down)
 		{
 			Session_LockUsers();
 			if (user_local->bDrawing)
-				NetUser_EndStroke(user_local);
+				my_netint.endStroke(user_local);
 			Session_UnlockUsers();
 		}
 		if (!bPlaying)
@@ -117,7 +120,7 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 				Session_LockFrames();
 
 				int idx = Session_ActiveFrameIndex() + (Key == Key_Comma ? -1 : 1);
-				Session_SetFrame(idx);
+				my_netint.setFrame(idx);
 
 				Session_UnlockFrames();
 			}
@@ -130,8 +133,8 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 		{
 			Session_LockFrames();
 			int idx = Session_ActiveFrameIndex() + 1;
-			Session_InsertFrame(idx);
-			Session_SetFrame(idx);
+			my_netint.insertFrame(idx);
+			my_netint.setFrame(idx);
 			Session_UnlockFrames();
 		}
 		Mutex_Unlock(mtx_play);
@@ -159,13 +162,15 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 				UserStroke* stroke = 0;
 				if (Key == 'Z')
 				{
-					if (NetUser_UndoStroke(user_local))
-						stroke = (UserStroke*)user_local->undone->tail->data;
+					my_netint.undoStroke();
+					//if (my_netint.undoStroke())
+						//stroke = (UserStroke*)user_local->undone->tail->data;
 				}
 				else
 				{
-					if (NetUser_RedoStroke(user_local))
-						stroke = (UserStroke*)user_local->strokes->tail->data;
+					my_netint.redoStroke();
+					//if (my_netint.redoStroke())
+						//stroke = (UserStroke*)user_local->strokes->tail->data;
 				}
 
 				if (stroke)
@@ -173,7 +178,7 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 					// Present the acted-on frame to the user
 					FrameItem* active = Session_ActiveFrame();
 					if (!active || active->data != stroke->framedat)
-						Session_SetFrame(Session_FrameData_GetIndex(stroke->framedat));
+						my_netint.setFrame(Session_FrameData_GetIndex(stroke->framedat));
 				}
 
 				Session_UnlockFrames();
@@ -248,7 +253,7 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 			Mutex_Lock(mtx_play);
 			if (!bPlaying)
 				Session_LockFrames();
-			Session_SetFrame(Data->newval.i);
+			my_netint.setFrame(Data->newval.i);
 			if (!bPlaying)
 				Session_UnlockFrames();
 			Window_Redraw(int_frame->wnd, 0);
@@ -260,7 +265,7 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 			if (!bPlaying)
 				Session_LockFrames();
 
-			Session_SetFPS(Data->newval.i);
+			my_netint.setFPS(Data->newval.i);
 
 			if (!bPlaying)
 				Session_UnlockFrames();
@@ -278,14 +283,14 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 		{
 			Session_LockFrames();
 			int idx = Session_ActiveFrameIndex() + 1;
-			Session_InsertFrame(idx);
-			Session_SetFrame(idx);
+			my_netint.insertFrame(idx);
+			my_netint.setFrame(idx);
 			Session_UnlockFrames();
 		}
 		else if (Item == btn_rem)
 		{
 			Session_LockFrames();
-			Session_RemoveFrame(Session_ActiveFrameIndex());
+			my_netint.removeFrame(Session_ActiveFrameIndex());
 			Session_UnlockFrames();
 		}
 		else if (Item == btn_play)
@@ -355,6 +360,7 @@ int PlayThread(void* UserData)
 		if (stop)
 			break;
 
+		// Directly setting frame to avoid usless network spam
 		Session_SetFrame(Session_ActiveFrameIndex() + 1);
 		Thread_Current_Sleep(1000 / my_sesh.fps);
 	}
@@ -382,9 +388,21 @@ void OnSeshMsg(int Msg, UID Object)
 		Window_Item_SetValuei(int_frame, Session_ActiveFrameIndex());
 		Window_Redraw(wnd_main, 0);
 		break;
-	case SessionMsg_ChangedFrameCount:
+	case SessionMsg_ChangedFramelist:
 		Window_IntBox_SetRange(int_frame, 0, Session_FrameCount() - 1);
 		break;
+	case SessionMsg_UserJoin:
+	{
+		NetUser* user = Session_GetUser(Object);
+		printf("User \"%S\" has joined\n", user->szName);
+		break;
+	}
+	case SessionMsg_UserLeave:
+	{
+		NetUser * user = Session_GetUser(Object);
+		printf("User \"%S\" has left\n", user->szName);
+		break;
+	}
 	}
 }
 
@@ -480,17 +498,29 @@ int main()
 	Window_Item_SetValuei(int_height, 400);
 
 	my_sesh.on_seshmsg = &OnSeshMsg;
+
 	ResetProject();
 
 	return Window_RunAll();
 }
 
+
+int SetupThread(void* UserData) {
+	//Client_StartAndRun(L"poggers lucas", "127.0.0.1", "42042");
+	Server_StartAndRun("42042");
+}
+
 void ResetProject()
 {
 	int width = Window_Item_GetValuei(int_width), height = Window_Item_GetValuei(int_height);
+
+	Client_StartAndRun_Local();
 	Session_Init(picker_bkg->color, width, height, 24);
-	//Window_IntBox_SetRange(int_frame, 0, my_sesh.frames->count - 1);
-	//Window_Item_SetValuei(int_frame, 0);
+
+	Thread_Resume(Thread_Create(&SetupThread, 0));
+	Thread_Current_Sleep(1000); // Testing
+	my_netint.join(L"reynante_gamer512");
+
 	tool_eraser.Color = my_sesh.bkgcol;
 	Window_Redraw(wnd_main, 0);
 }

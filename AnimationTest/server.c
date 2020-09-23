@@ -102,28 +102,29 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 		Session_LockUsers();
 
 		_Server_SendToAll(Msg);
-		Session_AddUser(user);
 
 		if (Client) // Zero if in the context of local user
 		{
-
+			Socket_Send(Client, (char*)msg, Net_ntohl(msg->length)); // Send the client their local user first
 			for (BasicListItem* next = 0; next = BasicList_Next(my_sesh.users, next);)
 			{
 				NetUser* dude = (NetUser*)next->data;
 
 				size_t textlen = (wcslen(dude->szName) + 1) * sizeof(dude->szName[0]);
-				NetMsg* msg = NetMsg_Create(SessionMsg_UserJoin, sizeof(UID) + textlen);
-				*(UID*)msg->data = Net_htonl(dude->id);
-				memcpy(msg->data + 4, dude->szName, textlen);
+				NetMsg* nextmsg = NetMsg_Create(SessionMsg_UserJoin, sizeof(UID) + textlen);
+				*(UID*)nextmsg->data = Net_htonl(dude->id);
+				memcpy(nextmsg->data + sizeof(UID), dude->szName, textlen);
 
-				Socket_Send(Client, (char*)msg, Net_ntohl(msg->length));
-				free(msg);
+				Socket_Send(Client, (char*)nextmsg, Net_ntohl(nextmsg->length));
+				free(nextmsg);
 			}
 
 			NetClient* netcl = (NetClient*)malloc(sizeof(*netcl));
 			netcl->sock = Client, netcl->user = user;
 			BasicList_Add(list_clients, netcl);
 		}
+
+		Session_AddUser(user);
 
 		Session_UnlockUsers();
 

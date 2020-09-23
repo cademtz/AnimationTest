@@ -56,7 +56,6 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 		int nextlen = 0, off = 0;
 
 		NetMsg* msg = (NetMsg*)msgbuf;
-		NetUser* user = 0;
 
 		while (1)
 		{
@@ -86,15 +85,15 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 					UID iduser = Net_ntohl(*(UID*)msg->data);
 					UniChar* szName = (UniChar*)(msg->data + sizeof(iduser));
 
-					NetUser* newuser = NetUser_Create(iduser, szName);;
+					NetUser* newuser = NetUser_Create(iduser, szName);
 
-					if (!user)
-						user = user_local = newuser;
+					if (!user_local)
+						user_local = newuser;
 
-					printf("[Client] Adding user \"%S\"\n", user->szName);
+					printf("[Client] Adding user \"%S\" (0x%X)\n", newuser->szName, newuser->id);
 
 					Session_LockUsers();
-					Session_AddUser(user);
+					Session_AddUser(newuser);
 					Session_UnlockUsers();
 				}
 					break;
@@ -118,7 +117,7 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 					NetUser* dude = Session_GetUser(iduser);
 					UniChar* szText = (UniChar*)(msg->data + sizeof(iduser));
 					if (dude)
-						Session_RemoveUser(user);
+						Session_RemoveUser(dude);
 					else
 						printf("[Client] Failed to find user 0x%X\n", iduser);
 					Session_UnlockUsers();

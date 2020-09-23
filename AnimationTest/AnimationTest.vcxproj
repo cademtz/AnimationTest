@@ -161,6 +161,7 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="sockets.h" />
     <ClInclude Include="threading.h" />
+    <ClInclude Include="Win32\winsock2_stripped.h" />
     <ClInclude Include="window.h" />
   </ItemGroup>
   <ItemGroup>

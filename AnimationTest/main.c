@@ -504,10 +504,13 @@ int main()
 	return Window_RunAll();
 }
 
+char bServer = 0;
 
 int SetupThread(void* UserData) {
-	//Client_StartAndRun(L"poggers lucas", "127.0.0.1", "42042");
-	Server_StartAndRun("42042");
+	if (bServer)
+		Server_StartAndRun("42042");
+	else
+		Client_StartAndRun(L"poggers lucas", "127.0.0.1", "42042");
 }
 
 void ResetProject()
@@ -517,8 +520,13 @@ void ResetProject()
 	Client_StartAndRun_Local();
 	Session_Init(picker_bkg->color, width, height, 24);
 
+	bServer = OpenDialog(DialogType_YesNo, L"Start as server?");
+
 	Thread_Resume(Thread_Create(&SetupThread, 0));
 	Thread_Current_Sleep(1000); // Testing
+
+
+	if (bServer)
 	my_netint.join(L"reynante_gamer512");
 
 	tool_eraser.Color = my_sesh.bkgcol;

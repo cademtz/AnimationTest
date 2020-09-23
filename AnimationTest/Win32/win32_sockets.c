@@ -1,7 +1,13 @@
 #include "../sockets.h"
-#include <WinSock2.h>
-#include <WS2tcpip.h>
+//#include <WinSock2.h>
+//#include <WS2tcpip.h>
 #include <stdio.h>
+
+#ifdef __clang__
+#include "winsock2_stripped.h"
+#else
+#include <WinSock2.h>
+#endif
 
 #pragma comment(lib, "Ws2_32.lib")
 

@@ -6,6 +6,26 @@ UID GenerateUID()
 	return ++i; // ;)
 }
 
+char* UniStr_ToUTF8(const UniChar* szText)
+{
+	int len = wcslen(szText) + 1;
+	char* utf8 = (char*)malloc(len);
+
+	size_t yawn;
+	wcstombs_s(&yawn, utf8, len, szText, len * sizeof(szText[0]));
+	return utf8;
+}
+
+UniChar* UTF8_ToUni(const char* szText)
+{
+	int len = strlen(szText) + 1;
+	UniChar* uni = (UniChar*)malloc(len * sizeof(uni[0]));
+
+	size_t yawn;
+	wcstombs_s(&yawn, uni, len * sizeof(uni[0]), szText, len);
+	return uni;
+}
+
 BasicList* BasicList_Create()
 {
 	BasicList* list = (BasicList*)malloc(sizeof(*list));

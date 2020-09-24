@@ -12,6 +12,7 @@ extern ThreadHandle Thread_Create(ThreadStartFn StartFunc, void* opt_UserData);
 extern void Thread_Resume(ThreadHandle Thread);
 extern void Thread_Suspend(ThreadHandle Thread);
 extern char Thread_Wait(ThreadHandle Thread, int* opt_outReturn);
+extern char Thread_IsAlive(ThreadHandle Thread);
 
 // - Terminates the thread, setting its return to -1
 // - Does NOT free the handle, see Thread_Destroy

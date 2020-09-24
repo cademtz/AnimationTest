@@ -52,6 +52,8 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 	{
 		ClientJoin(szName);
 
+		Session_Init(0xFFFFFF, 600, 400, 24);
+
 		char* msgbuf = (char*)malloc(MAX_MSGLEN);
 		int nextlen = 0, off = 0;
 
@@ -332,8 +334,7 @@ void ClientBeginStroke(NetUser* User, const Vec2* Point, const DrawTool* Tool, F
 	ClientStrokeMsg(SessionMsg_UserStrokeAdd, User, Session_ActiveFrameIndex(), 1, Point, Tool);
 }
 
-void ClientAddToStroke(NetUser* User, const Vec2* Point)
-{
+void ClientAddToStroke(NetUser* User, const Vec2* Point) {
 	ClientStrokeMsg(SessionMsg_UserStrokeAdd, User, Session_ActiveFrameIndex(), 1, Point, 0);
 }
 

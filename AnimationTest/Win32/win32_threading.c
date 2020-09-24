@@ -43,6 +43,10 @@ char Thread_Wait(ThreadHandle Thread, int* opt_outReturn)
 	return 1;
 }
 
+char Thread_IsAlive(ThreadHandle Thread) {
+	return WaitForSingleObject(Thread->hThread, 0) != WAIT_OBJECT_0;
+}
+
 void Thread_Terminate(ThreadHandle Thread) {
 	TerminateThread(Thread->hThread, -1);
 }

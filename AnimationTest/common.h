@@ -23,6 +23,14 @@ typedef struct _DrawTool
 	IntColor Color; // RGB
 } DrawTool;
 
+// Strings
+
+// - Returns a newly allocated string and must be freed after use
+char* UniStr_ToUTF8(const UniChar* szText);
+
+// - Returns a newly allocated string and must be freed after use
+UniChar* UTF8_ToUni(const char* szText);
+
 // Basic list
 
 typedef struct _BasicListItem BasicListItem;

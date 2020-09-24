@@ -66,8 +66,13 @@ void Server_StartAndRun(const char* Port)
 	mtx_clients = Mutex_Create();
 	sock_server = Socket_Create(0, Port);
 
-	Socket_Listen(sock_server);
-	while (Socket_Accept(sock_server, &_Server_OnAccept));
+	if (sock_server && Socket_Listen(sock_server))
+	{
+		printf("[Server] Listening on port %s\n", Port);
+		while (Socket_Accept(sock_server, &_Server_OnAccept));
+	}
+	else
+		printf("[Server] Error while attempting to host on port %s\n", Port);
 
 	printf("[Server] Closing server...\n");
 

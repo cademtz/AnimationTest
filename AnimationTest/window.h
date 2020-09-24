@@ -69,7 +69,9 @@ extern void Window_Draw_Bitmap(WndHandle Wnd, BitmapHandle Bmp, int X, int Y);
 WndItem* Window_Items_Next(WndHandle Wnd, WndItem* Item);
 WndItem* Window_Item_Add(WndHandle Wnd, int Type, int X, int Y, int W, int H, const UniChar* sztext);
 
-extern void Window_Item_SetText(WndItem* Item, UniChar* szText);
+void Window_Item_SetText(WndItem* Item, UniChar* szText);
+extern UniChar* Window_Item_CopyText(WndItem* Item);
+extern void Window_Item_FreeText(UniChar* Text);
 extern void Window_Item_SetValuei(WndItem* Item, int Value);
 extern void Window_Item_SetValuef(WndItem* Item, float Value);
 extern int Window_Item_GetValuei(WndItem* Item);
@@ -101,6 +103,7 @@ enum EItemType
 	ItemType_Label,
 	ItemType_IntBox,
 	ItemType_CheckBox,
+	ItemType_TextBox,
 };
 
 enum EMsgs

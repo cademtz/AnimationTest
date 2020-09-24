@@ -47,8 +47,7 @@ SocketHandle Socket_Create(const char* Host, const char* Port)
 	int result = getaddrinfo(Host, Port, &hints, &info);
 	if (result != 0)
 	{
-		printf("getaddrinfo() failed: %d\n", result);
-		DebugBreak();
+		printf("getaddrinfo(\"%s\", \"%s\", ...) failed: %d\n", Host, Port, result);
 		return 0;
 	}
 
@@ -116,7 +115,7 @@ char Socket_Listen(SocketHandle Socket)
 		return 0;
 	}
 
-	return 0;
+	return 1;
 }
 
 char Socket_Connect(SocketHandle Socket)

@@ -28,17 +28,23 @@ DrawTool* tool_active = &tool_brush;
 ThreadHandle thread_play = 0;
 MutexHandle mtx_play;
 
-MenuItem* mProperties;
+MenuItem* mProperties, * mHost, * mJoin;
 WndItem* int_frame, * int_fps, * int_brush, * btn_add, * btn_rem, * btn_clear, * btn_play, * bBrush, * bEraser;
 ColorPicker* picker_brush, * picker_bkg;
 int lLastX, lLastY, mLastX, mLastY, canvasX = 0, canvasY = 35;
 char bPlaying = 0;
 
-WndHandle wnd_prop, wnd_main;
+WndHandle wnd_prop, wnd_main, wnd_host, wnd_join;
 WndItem* int_width, * int_height, * btn_new, * btn_cancel;
+
+WndItem* text_hostport, * btn_host, * text_joinip, * text_joinport, * text_uname, * btn_join;
+
+char bServer = 0;
+ThreadHandle thread_net = 0;
 
 void ResetProject();
 int PlayThread(void* UserData);
+int NetworkThread(void* UserData);
 
 void SetTool(DrawTool* Tool)
 {
@@ -54,6 +60,10 @@ int OnMenu(MenuItem* Item)
 {
 	if (Item == mProperties)
 		Window_Show(wnd_prop, 1);
+	else if (Item == mHost)
+		Window_Show(wnd_host, 1);
+	else if (Item == mJoin)
+		Window_Show(wnd_join, 1);
 	return WndCallback_None;
 }
 
@@ -159,27 +169,10 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 			if (!bPlaying)
 			{
 				Session_LockFrames();
-				UserStroke* stroke = 0;
 				if (Key == 'Z')
-				{
 					my_netint.undoStroke();
-					//if (my_netint.undoStroke())
-						//stroke = (UserStroke*)user_local->undone->tail->data;
-				}
 				else
-				{
 					my_netint.redoStroke();
-					//if (my_netint.redoStroke())
-						//stroke = (UserStroke*)user_local->strokes->tail->data;
-				}
-
-				if (stroke)
-				{
-					// Present the acted-on frame to the user
-					FrameItem* active = Session_ActiveFrame();
-					if (!active || active->data != stroke->framedat)
-						my_netint.setFrame(Session_FrameData_GetIndex(stroke->framedat));
-				}
 
 				Session_UnlockFrames();
 			}
@@ -202,7 +195,7 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 
 int OnWndMsg(WndHandle Wnd, int WndMsg)
 {
-	if (Wnd == wnd_prop)
+	if (Wnd == wnd_prop || Wnd == wnd_host || Wnd == wnd_join)
 	{
 		if (WndMsg == WndMsg_Closing)
 		{
@@ -210,7 +203,7 @@ int OnWndMsg(WndHandle Wnd, int WndMsg)
 			return WndCallback_Skip;
 		}
 	}
-	else // Main window
+	else if (Wnd == wnd_main)
 	{
 		switch (WndMsg)
 		{
@@ -341,6 +334,21 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 		}
 		else if (Item == btn_cancel) 
 			Window_Show(wnd_prop, 0);
+
+		// Host/Join
+
+		else if (Item == btn_host || Item == btn_join)
+		{
+			bServer = Item == btn_host;
+			if (thread_net && Thread_IsAlive(thread_net))
+				OpenDialog(DialogType_Error, L"Cannot host/join: You are already in a session!");
+			else
+			{
+				thread_net = Thread_Create(&NetworkThread, 0);
+				Thread_Resume(thread_net);
+			}
+			Window_Show(bServer ? wnd_host : wnd_join, 0);
+		}
 	}
 	Mutex_Lock(mtx_items);
 	bItemMsg = 0;
@@ -433,8 +441,8 @@ int main()
 	mProperties = Window_Menu_Add_Child(wnd_main, mProj, L"&Properties...");
 
 	MenuItem* mSesh = Window_Menu_Add(wnd_main, L"&Session");
-	Window_Menu_Add_Child(wnd_main, mSesh, L"&Join");
-	Window_Menu_Add_Child(wnd_main, mSesh, L"&Host");
+	mJoin = Window_Menu_Add_Child(wnd_main, mSesh, L"&Join");
+	mHost = Window_Menu_Add_Child(wnd_main, mSesh, L"&Host");
 
 	int nextx = 5;
 	btn_add = Window_Item_Add(wnd_main, ItemType_Button, 5, 5, 40, 23, L"Add");
@@ -465,8 +473,11 @@ int main()
 	Window_IntBox_SetRange(int_brush, 1, 1000);
 	SetTool(&tool_brush);
 
+	// Properties window
+
 	memset(&args, 0, sizeof(args));
 	args.width = 175, args.height = 140;
+	args.x = args.y = -1;
 	args.sztitle = L"Properties";
 	args.visible = 0;
 	args.on_wndmsg = &OnWndMsg;
@@ -497,20 +508,70 @@ int main()
 	Window_Item_SetValuei(int_width, 600);
 	Window_Item_SetValuei(int_height, 400);
 
+	// Host window
+
+	memset(&args, 0, sizeof(args));
+	args.width = 150, args.height = 70;
+	args.x = args.y = -1;
+	args.sztitle = L"Host";
+	args.visible = 0;
+	args.on_wndmsg = &OnWndMsg;
+	args.on_itemmsg = &OnItemMsg;
+
+	wnd_host = Window_Create(&args);
+	Window_Item_Add(wnd_host, ItemType_Label, 5, 5, 40, 23, L"Port:");
+	text_hostport = Window_Item_Add(wnd_host, ItemType_TextBox, 40, 5, 100, 23, 0);
+	btn_host = Window_Item_Add(wnd_host, ItemType_Button, 5, 33, 140, 23, L"Host server");
+
 	my_sesh.on_seshmsg = &OnSeshMsg;
+
+	// Join window
+
+	args.height += 33 * 2;
+
+	wnd_join = Window_Create(&args);
+	Window_Item_Add(wnd_join, ItemType_Label, 5, 5, 40, 23, L"IP:");
+	text_joinip = Window_Item_Add(wnd_join, ItemType_TextBox, 40, 5, 100, 23, 0);
+	Window_Item_Add(wnd_join, ItemType_Label, 5, 33, 40, 23, L"Port:");
+	text_joinport = Window_Item_Add(wnd_join, ItemType_TextBox, 40, 33, 100, 23, 0);
+	Window_Item_Add(wnd_join, ItemType_Label, 5, 33 * 2, 40, 23, L"Name:");
+	text_uname = Window_Item_Add(wnd_join, ItemType_TextBox, 40, 33 * 2, 100, 23, 0);
+	btn_join = Window_Item_Add(wnd_join, ItemType_Button, 5, 33 * 3, 140, 23, L"Join server");
 
 	ResetProject();
 
 	return Window_RunAll();
 }
 
-char bServer = 0;
-
-int SetupThread(void* UserData) {
+int NetworkThread(void* UserData)
+{
 	if (bServer)
-		Server_StartAndRun("42042");
+	{
+		UniChar* text = Window_Item_CopyText(text_hostport);
+		char* szPort = UniStr_ToUTF8(text);
+		Window_Item_FreeText(text);
+
+		Server_StartAndRun(szPort);
+		free(szPort);
+	}
 	else
-		Client_StartAndRun(L"poggers lucas", "127.0.0.1", "42042");
+	{
+		UniChar* text = Window_Item_CopyText(text_joinip);
+		char* szIp = UniStr_ToUTF8(text);
+		Window_Item_FreeText(text);
+
+		text = Window_Item_CopyText(text_joinport);
+		char* szPort = UniStr_ToUTF8(text);
+		Window_Item_FreeText(text);
+
+		text = Window_Item_CopyText(text_uname);
+
+		Client_StartAndRun(text, szIp, szPort);
+
+		Window_Item_FreeText(text);
+		free(szPort);
+		free(szIp);
+	}
 }
 
 void ResetProject()
@@ -520,14 +581,7 @@ void ResetProject()
 	Client_StartAndRun_Local();
 	Session_Init(picker_bkg->color, width, height, 24);
 
-	bServer = OpenDialog(DialogType_YesNo, L"Start as server?");
-
-	Thread_Resume(Thread_Create(&SetupThread, 0));
-	Thread_Current_Sleep(1000); // Testing
-
-
-	if (bServer)
-	my_netint.join(L"reynante_gamer512");
+	my_netint.join(L"Local");
 
 	tool_eraser.Color = my_sesh.bkgcol;
 	Window_Redraw(wnd_main, 0);

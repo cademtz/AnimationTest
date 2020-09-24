@@ -233,6 +233,30 @@ void Window_Draw_Bitmap(WndHandle Wnd, BitmapHandle Bmp, int X, int Y)
 	DeleteDC(hdcMem);
 }
 
+UniChar* Window_Item_CopyText(WndItem* Item)
+{
+	HWND hWnd = (HWND)Item->_id;
+
+	int len = GetWindowTextLength(hWnd) + 1, size = len * sizeof(TCHAR);
+	LPTSTR szNative = (LPTSTR)malloc(size);
+	memset(szNative, 0, size);
+
+	GetWindowText(hWnd, szNative, len);
+
+#ifdef UNICODE
+	return szNative;
+#else
+	UniChar* szUni = (UniChar*)malloc(len * sizeof(szUni[0]));
+	mbtowc(szUni, szNative, len);
+	free(szNative);
+	return szUni;
+#endif
+}
+
+void Window_Item_FreeText(UniChar* Text) {
+	free(Text);
+}
+
 void Window_Item_SetValuei(WndItem* Item, int Value)
 {
 	HWND hWnd = (HWND)Item->_id;
@@ -387,6 +411,9 @@ int _Window_Item_Add_Impl(WndItem* Item)
 			Item->x, Item->y, Item->width, Item->height, hParent, 0, hInst, 0);
 		SendMessage(edit, WM_SETFONT, font_best, MAKELPARAM(TRUE, 0));
 		break;
+	case ItemType_TextBox:
+		sztype = WC_EDIT;
+		style |= WS_BORDER;
 	}
 
 	if (!sztype)

@@ -89,6 +89,8 @@ void UserStroke_AddPoint(UserStroke* Stroke, const Vec2* Line);
 
 enum ESessionMsg
 {
+	SessionMsg_Init,
+
 	SessionMsg_UserJoin,
 	SessionMsg_UserLeave,
 	SessionMsg_UserChat,

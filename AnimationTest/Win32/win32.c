@@ -527,6 +527,26 @@ void Bitmap_Draw_Bitmap(BitmapHandle Bmp, int X, int Y, BitmapHandle Src)
 	DeleteDC(dc);
 }
 
+void Bitmap_Draw_Bits(BitmapHandle Bmp, int X, int Y, IntColor* Bits, int Width, int Height)
+{
+	IntColor* srcbits = (IntColor*)Bmp->_data->bits;
+	for (int srcy = Y; srcy < Bmp->height; srcy++)
+		for (int srcx = X; srcx < Bmp->width; srcx++)
+			srcbits[srcx + srcy * Bmp->width] = Bits[(srcx - X) + (srcy - Y) * Width];
+}
+
+IntColor* Bitmap_CopyBits(BitmapHandle Bmp)
+{
+	size_t size = (size_t)Bmp->width * Bmp->height * sizeof(IntColor);
+	IntColor* bits = (IntColor*)malloc(size);
+	memcpy(bits, Bmp->_data->bits, size);
+	return size;
+}
+
+void Bitmap_FreeBits(IntColor* Bits) {
+	free(Bits);
+}
+
 void HandleMouse(WndHandle Wnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	int x = LOWORD(lParam), y = HIWORD(lParam);

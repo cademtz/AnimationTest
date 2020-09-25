@@ -52,8 +52,6 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 	{
 		ClientJoin(szName);
 
-		Session_Init(0xFFFFFF, 600, 400, 24);
-
 		char* msgbuf = (char*)malloc(MAX_MSGLEN);
 		int nextlen = 0, off = 0;
 
@@ -62,18 +60,20 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 		while (1)
 		{
 			// Recv for the next message will always be at off 0
-			int count = Socket_Recv(sock_client, msgbuf + off, (nextlen ? nextlen : MAX_MSGLEN) - off);
+			int count = Socket_Recv(sock_client, msgbuf + off, nextlen ? (nextlen - off) : (int)sizeof(NetMsg));
 			if (!count)
 				break;
 
+			off += count;
+
 			if (!nextlen)
 			{
-				if (off >= sizeof(NetMsg))
-					nextlen = Net_ntohl(msg->length);
+				nextlen = Net_ntohl(msg->length);
+				continue; // Receive the rest of the data, now that the length is known
 			}
 			if (nextlen > MAX_MSGLEN)
 			{
-				printf("[Client] wtheck, RUDE!!! Server was sending a large message of %d bytes! Kicking...\n", nextlen);
+				printf("[Client] wtheck, RUDE!!! Server was sending a large message of %d bytes! Leaving...\n", nextlen);
 				break;
 			}
 
@@ -82,6 +82,16 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 				int seshmsg = Net_ntohl(msg->seshmsg);
 				switch (seshmsg)
 				{
+				case SessionMsg_Init:
+				{
+					int* data = (int*)msg->data;
+					int width = Net_ntohl(data[0]), height = Net_ntohl(data[1]);
+					int fps = Net_ntohl(data[2]);
+					IntColor bkgcol = (IntColor)Net_ntohl(data[3]);
+
+					Session_Init(bkgcol, width, height, fps);
+				}
+					break;
 				case SessionMsg_UserJoin:
 				{
 					UID iduser = Net_ntohl(*(UID*)msg->data);
@@ -219,22 +229,53 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 					Session_UnlockFrames();
 				}
 					break;
-				case SessionMsg_ChangedFrame:
-					// TO DO: Users can send their current frame so that other users may follow them
-					break;
+				/*case SessionMsg_SwitchedFrame:
+				{
+					UID iduser = Net_ntohl(*(int*)msg->data);
+					int idxframe = Net_ntohl(*(int*)(msg->data + sizeof(iduser)));
+
+					Session_LockUsers();
+					Session_LockFrames();
+
+					NetUser* user = 0;
+					if (iduser != user_local->id)
+						user = Session_GetUser(iduser);
+					Session_SetFrame(idxframe, user);
+
+					Session_UnlockFrames();
+					Session_UnlockUsers();
+				}
+					break;*/
 				case SessionMsg_ChangedFramelist:
 				{
 					Session_LockFrames();
-					int idxframe = Net_ntohl(*(int*)msg->data);
-					int flags = Net_ntohl(*(int*)(msg->data + sizeof(idxframe)));
+					int* ints = (int*)msg->data;
+					UID iduser = Net_ntohl(ints[0]);
+					int idxframe = Net_ntohl(ints[1]);
+					int flags = Net_ntohl(ints[2]);
 
-					if (idxframe > 0)
+					NetUser* dude = Session_GetUser(iduser);
+
+					if (idxframe >= 0)
 					{
 						if (flags) // Boolean for now. True = add, false = remove
-							Session_InsertFrame(idxframe);
+						{
+							printf("Inserting frame at %d\n", idxframe);
+							Session_InsertFrame(idxframe, dude);
+						}
 						else // Remove
-							Session_RemoveFrame(idxframe);
+						{
+							printf("Removing frame at %d\n", idxframe);
+							Session_RemoveFrame(idxframe, dude);
+						}
 					}
+
+					if (dude == user_local)
+					{
+						int set = idxframe >= Session_FrameCount() ? Session_FrameCount() - 1 : idxframe;
+						Session_SetFrame(set, user_local);
+					}
+
 					Session_UnlockFrames();
 				}
 					break;
@@ -244,8 +285,6 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 
 				off = nextlen = 0;
 			}
-			else
-				off += count;
 		}
 
 		printf("[Client] Closing client...\n");
@@ -255,10 +294,15 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 		printf("[Client] Failed to connect");
 
 	Socket_Destroy(sock_client);
+	Client_StartAndRun_Local();
+
 	printf("[Client] Client closed.\n");
 }
 
 void LocalJoin(const UniChar* szName);
+void LocalSetFrame(int Index);
+void LocaLInsertFrame(int Index);
+void LocaLRemoveFrame(int Index);
 void LocalLeave() { }
 void LocalChat(const UniChar* szText) { }
 void LocalUndo();
@@ -270,9 +314,9 @@ void Client_StartAndRun_Local()
 
 	my_netint.join = &LocalJoin;
 	my_netint.setFPS = &Session_SetFPS;
-	my_netint.setFrame = &Session_SetFrame;
-	my_netint.insertFrame = &Session_InsertFrame;
-	my_netint.removeFrame = &Session_RemoveFrame;
+	my_netint.setFrame = &LocalSetFrame;
+	my_netint.insertFrame = &LocaLInsertFrame;
+	my_netint.removeFrame = &LocaLRemoveFrame;
 	my_netint.beginStroke = &NetUser_BeginStroke;
 	my_netint.addToStroke = &NetUser_AddToStroke;
 	my_netint.endStroke = &NetUser_EndStroke;
@@ -299,17 +343,18 @@ void ClientSetFPS(int FPS)
 {
 	NetMsg* sendmsg = NetMsg_Create(SessionMsg_ChangedFPS, sizeof(FPS));
 	*(int*)sendmsg->data = Net_htonl(FPS);
-	Socket_Send(sock_client, sendmsg, Net_ntohl(sendmsg->length));
+	Socket_Send(sock_client, (char*)sendmsg, Net_ntohl(sendmsg->length));
 	free(sendmsg);
 }
 
 void ClientSetFrame(int Index)
 {
-	Session_SetFrame(Index);
+	//Session_SetFrame(Index, user_local);
 
-	NetMsg* sendmsg = NetMsg_Create(SessionMsg_ChangedFrame, sizeof(Index));
-	*(int*)sendmsg->data = Net_htonl(Index);
-	Socket_Send(sock_client, sendmsg, Net_ntohl(sendmsg->length));
+	NetMsg* sendmsg = NetMsg_Create(SessionMsg_SwitchedFrame, sizeof(UID) + sizeof(Index));
+	int* ints = (int*)sendmsg->data;
+	ints[1] = Net_htonl(Index);
+	Socket_Send(sock_client, (char*)sendmsg, Net_ntohl(sendmsg->length));
 	free(sendmsg);
 }
 
@@ -363,6 +408,22 @@ void LocalJoin(const UniChar* szName)
 	Session_AddUser(user_local);
 }
 
+void LocalSetFrame(int Index) {
+	Session_SetFrame(Index, user_local);
+}
+
+void LocaLInsertFrame(int Index)
+{
+	Session_InsertFrame(Index, user_local);
+	Session_SetFrame(Index, user_local);
+}
+
+void LocaLRemoveFrame(int Index)
+{
+	Session_RemoveFrame(Index, user_local);
+	Session_SetFrame(Index >= Session_FrameCount() ? Index : Session_FrameCount() - 1, user_local);
+}
+
 void LocalUndo() {
 	NetUser_UndoStroke(user_local);
 }
@@ -373,9 +434,10 @@ void LocalRedo() {
 
 void ClientChangeFramelist(int Index, int Flags)
 {
-	NetMsg* msg = NetMsg_Create(SessionMsg_ChangedFramelist, sizeof(int) + sizeof(int));
-	*(int*)msg->data = Net_htonl(Index);
-	*(int*)(msg->data + sizeof(Index)) = Net_htonl(Flags);
+	NetMsg* msg = NetMsg_Create(SessionMsg_ChangedFramelist, sizeof(UID) + sizeof(int) + sizeof(int));
+	int* ints = (int*)msg->data;
+	ints[1] = Net_htonl(Index);
+	ints[2] = Net_htonl(Flags);
 
 	Socket_Send(sock_client, (char*)msg, Net_ntohl(msg->length));
 

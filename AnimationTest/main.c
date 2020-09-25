@@ -130,7 +130,8 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 				Session_LockFrames();
 
 				int idx = Session_ActiveFrameIndex() + (Key == Key_Comma ? -1 : 1);
-				my_netint.setFrame(idx);
+				//my_netint.setFrame(idx);
+				Session_SetFrame(idx, user_local);
 
 				Session_UnlockFrames();
 			}
@@ -144,7 +145,7 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 			Session_LockFrames();
 			int idx = Session_ActiveFrameIndex() + 1;
 			my_netint.insertFrame(idx);
-			my_netint.setFrame(idx);
+			//my_netint.setFrame(idx);
 			Session_UnlockFrames();
 		}
 		Mutex_Unlock(mtx_play);
@@ -246,7 +247,8 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 			Mutex_Lock(mtx_play);
 			if (!bPlaying)
 				Session_LockFrames();
-			my_netint.setFrame(Data->newval.i);
+			Session_SetFrame(Data->newval.i, user_local);
+			//my_netint.setFrame(Data->newval.i);
 			if (!bPlaying)
 				Session_UnlockFrames();
 			Window_Redraw(int_frame->wnd, 0);
@@ -277,7 +279,6 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 			Session_LockFrames();
 			int idx = Session_ActiveFrameIndex() + 1;
 			my_netint.insertFrame(idx);
-			my_netint.setFrame(idx);
 			Session_UnlockFrames();
 		}
 		else if (Item == btn_rem)
@@ -368,8 +369,7 @@ int PlayThread(void* UserData)
 		if (stop)
 			break;
 
-		// Directly setting frame to avoid usless network spam
-		Session_SetFrame(Session_ActiveFrameIndex() + 1);
+		Session_SetFrame(Session_ActiveFrameIndex() + 1, user_local);
 		Thread_Current_Sleep(1000 / my_sesh.fps);
 	}
 	Session_UnlockFrames();
@@ -383,18 +383,30 @@ void OnSeshMsg(int Msg, UID Object)
 	Mutex_Unlock(mtx_items);
 	switch (Msg)
 	{
-	case SessionMsg_UserStrokeAdd:
 	case SessionMsg_UserStrokeRedo:
 	case SessionMsg_UserStrokeUndo:
+		if (Object == user_local->id)
+		{
+			UserStroke* stroke;
+			if (Msg == SessionMsg_UserStrokeUndo)
+				stroke = (UserStroke*)user_local->undone->tail->data;
+			else
+				stroke = (UserStroke*)user_local->strokes->tail->data;
+			Session_SetFrame(Session_FrameData_GetIndex(stroke->framedat), user_local);
+		}
+	case SessionMsg_UserStrokeAdd:
 		Window_Redraw(wnd_main, 0);
 		break;
 	case SessionMsg_ChangedFPS:
 		if (!item)
 			Window_Item_SetValuei(int_fps, my_sesh.fps);
 		break;
-	case SessionMsg_ChangedFrame:
-		Window_Item_SetValuei(int_frame, Session_ActiveFrameIndex());
-		Window_Redraw(wnd_main, 0);
+	case SessionMsg_SwitchedFrame:
+		if (!Object || Object == user_local->id) // Server or local user
+		{
+			Window_Item_SetValuei(int_frame, Session_ActiveFrameIndex());
+			Window_Redraw(wnd_main, 0);
+		}
 		break;
 	case SessionMsg_ChangedFramelist:
 		Window_IntBox_SetRange(int_frame, 0, Session_FrameCount() - 1);
@@ -572,6 +584,7 @@ int NetworkThread(void* UserData)
 		free(szPort);
 		free(szIp);
 	}
+	return 0;
 }
 
 void ResetProject()

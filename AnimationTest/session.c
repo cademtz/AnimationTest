@@ -33,14 +33,12 @@ void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsi
 	my_sesh._frames = FrameList_Create();
 	my_sesh.users = BasicList_Create();
 
-	//user_local = NetUser_Create(GenerateUID(), L"reynante_gamer512");
-	//BasicList_Add(my_sesh.users, user_local);
+	user_local = 0;
 
-	Session_InsertFrame(0);
-	Session_SetFrame(0);
+	Session_InsertFrame(0, 0);
+	Session_SetFrame(0, 0);
 
-	//my_sesh.on_seshmsg(SessionMsg_UserJoin, user_local->id);
-	my_sesh.on_seshmsg(SessionMsg_ChangedFrame, 0);
+	my_sesh.on_seshmsg(SessionMsg_SwitchedFrame, 0);
 	my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, 0);
 	my_sesh.on_seshmsg(SessionMsg_ChangedFPS, 0);
 
@@ -54,30 +52,39 @@ void Session_SetFPS(int FPS)
 	my_sesh.on_seshmsg(SessionMsg_ChangedFPS, 0);
 }
 
-void Session_SetFrame(int Index)
+void Session_SetFrame(int Index, NetUser* opt_User)
 {
 	if (Index >= my_sesh._frames->count)
 		Index = 0;
 	else if (Index < 0)
 		Index = my_sesh._frames->count - 1;
 
-	my_sesh._index_active = Index;
-	my_sesh._frame_active = FrameList_At(my_sesh._frames, Index);
-	my_sesh.on_seshmsg(SessionMsg_ChangedFrame, 0);
+	if (!opt_User || opt_User == user_local)
+	{
+		my_sesh._index_active = Index;
+		my_sesh._frame_active = FrameList_At(my_sesh._frames, Index);
+	}
+
+	if (opt_User)
+		opt_User->frame_active = Index;
+
+	my_sesh.on_seshmsg(SessionMsg_SwitchedFrame, opt_User ? opt_User->id : 0);
 }
 
-void Session_InsertFrame(int Index)
+void Session_InsertFrame(int Index, NetUser* opt_User)
 {
 	FrameData* data = FrameData_Create(my_sesh.width, my_sesh.height, my_sesh.bkgcol);
 	FrameList_Insert(my_sesh._frames, data, Index);
 
-	my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, 0);
+	my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, opt_User ? opt_User->id : 0);
 }
 
-void Session_RemoveFrame(int Index)
+void Session_RemoveFrame(int Index, NetUser* opt_User)
 {
 	if (my_sesh._frames->count < 2)
 		return;
+
+	UID id = opt_User ? opt_User->id : 0;
 
 	FrameData* framedat = FrameList_Remove_At(my_sesh._frames, Index);
 	if (!FrameList_IsDataUsed(my_sesh._frames, framedat))
@@ -91,14 +98,14 @@ void Session_RemoveFrame(int Index)
 		FrameData_Destroy(framedat);
 	}
 
-	my_sesh.on_seshmsg(SessionMsg_ChangedFrame, 0);
+	my_sesh.on_seshmsg(SessionMsg_SwitchedFrame, id);
 
 	int count = my_sesh._frames->count;
 	if (count >= Index)
 	{
 		my_sesh._index_active = count - 1;
 		my_sesh._frame_active = FrameList_At(my_sesh._frames, my_sesh._index_active);
-		my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, 0);
+		my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, id);
 	}
 }
 
@@ -199,6 +206,7 @@ char NetUser_UndoStroke(NetUser* User)
 		UserStroke* stroke = BasicList_Pop(User->strokes);
 		BasicList_Add(User->undone, stroke);
 		FrameData_RemoveStroke(stroke->framedat, stroke);
+		BasicList_Remove_FirstOf(my_sesh._strokes, stroke);
 		my_sesh.on_seshmsg(SessionMsg_UserStrokeUndo, User->id);
 		return 1;
 	}
@@ -212,6 +220,7 @@ char NetUser_RedoStroke(NetUser* User)
 		UserStroke* stroke = BasicList_Pop(User->undone);
 		BasicList_Add(User->strokes, stroke);
 		FrameData_AddStroke(stroke->framedat, stroke);
+		BasicList_Add(my_sesh._strokes, stroke);
 		my_sesh.on_seshmsg(SessionMsg_UserStrokeRedo, User->id);
 		return 1;
 	}

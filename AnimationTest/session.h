@@ -30,9 +30,9 @@ extern NetUser* user_local;
 void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsigned char fps);
 
 void Session_SetFPS(int FPS);
-void Session_SetFrame(int Index);
-void Session_InsertFrame(int Index);
-void Session_RemoveFrame(int Index);
+void Session_SetFrame(int Index, NetUser* opt_User);
+void Session_InsertFrame(int Index, NetUser* opt_User);
+void Session_RemoveFrame(int Index, NetUser* opt_User);
 FrameItem* Session_GetFrame(int Index);
 int Session_FrameData_GetIndex(const FrameData* FrameDat);
 void Session_AddUser(NetUser* User);
@@ -61,6 +61,7 @@ typedef struct _NetUser
 	UID id;
 	UniChar szName[USERNAME_MAX];
 	BasicList* strokes, * undone;
+	int frame_active;
 	char bDrawing; // Actively adding to a stroke
 } NetUser;
 
@@ -101,13 +102,13 @@ enum ESessionMsg
 	SessionMsg_UserStrokeEnd,
 
 	SessionMsg_ChangedFPS, 
-	SessionMsg_ChangedFrame,
+	SessionMsg_SwitchedFrame,
 	SessionMsg_ChangedFramelist,
 };
 
 // Networking
 
-#define MAX_MSGLEN 0x400
+#define MAX_MSGLEN 0x800
 
 typedef struct _NetMsg
 {

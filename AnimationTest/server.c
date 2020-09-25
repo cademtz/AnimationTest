@@ -19,6 +19,9 @@ int _Server_ClientThread(void* UserDat);
 int _Server_OnAccept(SocketHandle Client);
 void _Server_OnSessionMsg(int SessionMsg, UID Object);
 void _Server_SendToAll(const NetMsg* Msg); // Will lock mtx_clients
+NetMsg* _Server_MakeStrokeMsg(const UserStroke* Stroke);
+NetMsg* _Server_MakeGenericUserMsg(int SessionMsg, const NetUser* User);
+
 // Functions for server-client hybrid (Hosting the server while simultaneously being a user)
 
 void ServerClJoin(const UniChar* szName);
@@ -87,7 +90,6 @@ void Server_StartAndRun(const char* Port)
 void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 {
 	NetUser* user = *pUser;
-	NetMsg* msg = Msg;
 	int seshmsg = Net_ntohl(Msg->seshmsg);
 
 	switch (seshmsg)
@@ -108,9 +110,21 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 
 		_Server_SendToAll(Msg);
 
-		if (Client) // Zero if in the context of local user
+		if (Client) // Zero if in the context of host's local user
 		{
-			Socket_Send(Client, (char*)msg, Net_ntohl(msg->length)); // Send the client their local user first
+			NetMsg* init = NetMsg_Create(SessionMsg_Init, sizeof(int) * 4);
+			int* data = (int*)init->data;
+			data[0] = Net_htonl(my_sesh.width), data[1] = Net_htonl(my_sesh.height);
+			data[2] = Net_htonl(my_sesh.fps);
+			data[3] = Net_htonl(my_sesh.bkgcol);
+
+			Socket_Send(Client, (char*)init, Net_ntohl(init->length));
+
+			NetMsg_Destroy(init);
+
+			Socket_Send(Client, (char*)Msg, Net_ntohl(Msg->length)); // Send the client their local user first
+
+			// Send all users
 			for (BasicListItem* next = 0; next = BasicList_Next(my_sesh.users, next);)
 			{
 				NetUser* dude = (NetUser*)next->data;
@@ -127,12 +141,45 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 			NetClient* netcl = (NetClient*)malloc(sizeof(*netcl));
 			netcl->sock = Client, netcl->user = user;
 			BasicList_Add(list_clients, netcl);
+
+			Session_LockFrames();
+
+			// Send all frames
+
+			int framelen = sizeof(UID) + sizeof(int) + sizeof(int);
+			NetMsg* framemsg = NetMsg_Create(SessionMsg_ChangedFramelist, framelen);
+			data = (int*)framemsg->data;
+			data[0] = Net_htonl(0); // User 0 (null)
+			data[1] = Net_htonl(0); // Index 0
+			data[2] = Net_htonl(1); // Adding frame
+
+			// TODO: Instead of spamming the client with frames, how about implement framecount in SessionMsg_Init
+			for (int i = 0; i < Session_FrameCount() - 1; i++)
+				Socket_Send(Client, (char*)framemsg, Net_ntohl(framemsg->length));
+
+			NetMsg_Destroy(framemsg);
+
+			// Send all strokes
+
+			for (BasicListItem* next = 0; next = BasicList_Next(my_sesh._strokes, next);)
+			{
+				UserStroke* stroke = (UserStroke*)next->data;
+
+				NetMsg* strokemsg = _Server_MakeStrokeMsg(stroke);
+				Socket_Send(Client, (char*)strokemsg, Net_ntohl(strokemsg->length));
+				NetMsg_Destroy(strokemsg);
+
+				strokemsg = _Server_MakeGenericUserMsg(SessionMsg_UserStrokeEnd, stroke->user);
+				Socket_Send(Client, (char*)strokemsg, Net_ntohl(strokemsg->length));
+				NetMsg_Destroy(strokemsg);
+			}
+
+			Session_UnlockFrames();
 		}
 
 		Session_AddUser(user);
 
 		Session_UnlockUsers();
-
 	}
 	break;
 	case SessionMsg_UserChat:
@@ -156,9 +203,9 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 
 		Session_LockUsers();
 
-		*(UID*)msg->data = Net_htonl(user->id);
+		*(UID*)Msg->data = Net_htonl(user->id);
 
-		char* next = msg->data + sizeof(UID);
+		char* next = Msg->data + sizeof(UID);
 		int idxframe = Net_ntohl(*(int*)next);
 		next += sizeof(idxframe);
 		int count = Net_ntohl(*(int*)next);
@@ -187,7 +234,7 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 				}
 			}
 
-			_Server_SendToAll(msg);
+			_Server_SendToAll(Msg);
 		}
 		else
 			printf("[Server] Invalid stroke data from \"%S\"\n", user->szName);
@@ -203,9 +250,9 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 		Session_LockUsers();
 		Session_LockFrames();
 
-		*(UID*)msg->data = Net_htonl(user->id);
+		*(UID*)Msg->data = Net_htonl(user->id);
 		NetUser_EndStroke(user);
-		_Server_SendToAll(msg);
+		_Server_SendToAll(Msg);
 
 		Session_UnlockFrames();
 		Session_UnlockUsers();
@@ -218,7 +265,7 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 			break;
 
 		Session_LockUsers();
-		*(UID*)msg->data = Net_htonl(user->id);
+		*(UID*)Msg->data = Net_htonl(user->id);
 
 		Session_LockFrames();
 		if (seshmsg == SessionMsg_UserStrokeUndo)
@@ -226,7 +273,7 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 		else
 			NetUser_RedoStroke(user);
 
-		_Server_SendToAll(msg);
+		_Server_SendToAll(Msg);
 
 		Session_UnlockFrames();
 		Session_UnlockUsers();
@@ -234,39 +281,62 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 	break;
 	case SessionMsg_ChangedFPS:
 	{
-		int fps = Net_ntohl(*(int*)msg->data);
+		int fps = Net_ntohl(*(int*)Msg->data);
 		if (fps < 0 || fps > 100)
 			break;
 
 		Session_LockFrames();
 		Session_SetFPS(fps);
-		_Server_SendToAll(msg);
+		_Server_SendToAll(Msg);
 		Session_UnlockFrames();
 	}
 	break;
-	case SessionMsg_ChangedFrame:
-		// TO DO: Users can send their current frame so that other users may follow them
-		break;
-	case SessionMsg_ChangedFramelist:
-	{
-		Session_LockFrames();
-		int idxframe = Net_ntohl(*(int*)msg->data);
-		int flags = Net_ntohl(*(int*)(msg->data + sizeof(idxframe)));
-
-		int framecount = Session_FrameCount();
-		char valid = 1;
-		if (idxframe > 0)
+	/*case SessionMsg_SwitchedFrame:
+		if (user)
 		{
-			if (flags && idxframe <= framecount) // Boolean for now. True = add, false = remove
-				Session_InsertFrame(idxframe);
-			else if (!flags && idxframe < framecount) // Remove
-				Session_RemoveFrame(idxframe);
-			else valid = 0;
+			Session_LockFrames();
+
+			int* ints = (int*)Msg->data;
+			ints[0] = Net_htonl(user->id);
+			int idxframe = Net_ntohl(ints[1]);
+			
+			if (idxframe >= 0 && idxframe < Session_FrameCount())
+				_Server_SendToAll(Msg);
+
+			Session_UnlockFrames();
 		}
-		if (valid)
-			_Server_SendToAll(msg);
-		Session_UnlockFrames();
-	}
+		// TO DO: Users can send their current frame so that other users may follow them
+		break;*/
+	case SessionMsg_ChangedFramelist:
+		if (user)
+		{
+			Session_LockFrames();
+			int* ints = (int*)Msg->data;
+			ints[0] = Net_htonl(user->id);
+			int idxframe = Net_ntohl(ints[1]);
+			int flags = Net_ntohl(ints[2]);
+
+			int framecount = Session_FrameCount();
+			char valid = 1;
+			if (idxframe >= 0)
+			{
+				if (flags && idxframe <= framecount) // Boolean for now. True = add, false = remove
+					Session_InsertFrame(idxframe, user);
+				else if (!flags && idxframe < framecount) // Remove
+					Session_RemoveFrame(idxframe, user);
+				else valid = 0;
+			}
+			if (valid)
+			{
+				_Server_SendToAll(Msg);
+				if (user->id == user_local->id)
+				{
+					int set = idxframe > Session_FrameCount() ? Session_FrameCount() - 1 : idxframe;
+					Session_SetFrame(set, user_local);
+				}
+			}
+			Session_UnlockFrames();
+		}
 	break;
 	default:
 		printf("[Server] Unhandled msg type %d\n", seshmsg);
@@ -287,14 +357,16 @@ int _Server_ClientThread(void* UserDat)
 	while (1)
 	{
 		// Recv for the next message will always be at off 0
-		int count = Socket_Recv(Client, msgbuf + off, (nextlen ? nextlen : MAX_MSGLEN) - off);
+		int count = Socket_Recv(Client, msgbuf + off, nextlen ? (nextlen - off) : (int)sizeof(NetMsg));
 		if (!count)
 			break;
 
+		off += count;
+
 		if (!nextlen)
 		{
-			if (off >= sizeof(NetMsg))
-				nextlen = Net_ntohl(msg->length);
+			nextlen = Net_ntohl(msg->length);
+			continue; // Receive the rest of the data, now that the length is known
 		}
 		if (nextlen > MAX_MSGLEN)
 		{
@@ -308,8 +380,6 @@ int _Server_ClientThread(void* UserDat)
 
 			off = nextlen = 0;
 		}
-		else
-			off += count;
 	}
 
 	Mutex_Lock(mtx_clients);
@@ -360,6 +430,37 @@ void _Server_SendToAll(const NetMsg* Msg)
 	Mutex_Unlock(mtx_clients);
 }
 
+NetMsg* _Server_MakeStrokeMsg(const UserStroke* Stroke)
+{
+	int frame = Session_FrameData_GetIndex(Stroke->framedat);
+	int cpoints = Stroke->points->count;
+	int length = sizeof(UID) + sizeof(frame) + sizeof(cpoints) + (sizeof(Vec2) * cpoints) + sizeof(DrawTool);
+
+	NetMsg* msg = NetMsg_Create(SessionMsg_UserStrokeAdd, length);
+	int* ints = (int*)msg->data;
+	ints[0] = Net_htonl(Stroke->user->id);
+	ints[1] = Net_htonl(frame);
+	ints[2] = Net_htonl(cpoints);
+
+	Vec2* points = (Vec2*)&ints[3];
+	int i = 0;
+	for (BasicListItem* next = 0; next = BasicList_Next(Stroke->points, next); i++)
+	{
+		Vec2* vec = (Vec2*)next->data;
+		points[i].x = Net_htonl(vec->x), points[i].y = Net_htonl(vec->y);
+	}
+	*(DrawTool*)&points[cpoints] = Stroke->tool;
+
+	return msg;
+}
+
+NetMsg* _Server_MakeGenericUserMsg(int SessionMsg, const NetUser* User)
+{
+	NetMsg* msg = NetMsg_Create(SessionMsg, sizeof(UID));
+	*(UID*)msg->data = Net_htonl(User->id);
+	return msg;
+}
+
 void ServerClJoin(const UniChar* szName)
 {
 	size_t textlen = (wcslen(szName) + 1) * sizeof(szName[0]);
@@ -382,10 +483,11 @@ void ServerClSetFPS(int FPS)
 
 void ServerClSetFrame(int Index)
 {
-	Session_SetFrame(Index);
+	Session_SetFrame(Index, user_local);
 
-	NetMsg* sendmsg = NetMsg_Create(SessionMsg_ChangedFrame, sizeof(Index));
-	*(int*)sendmsg->data = Net_htonl(Index);
+	NetMsg* sendmsg = NetMsg_Create(SessionMsg_SwitchedFrame, sizeof(UID) + sizeof(Index));
+	int* ints = (int*)sendmsg->data;
+	ints[1] = Net_htonl(Index);
 	_Server_ProcessMsg(0, &user_local, sendmsg);
 	free(sendmsg);
 }
@@ -465,9 +567,10 @@ void ServerClStrokeMsg(int SessionMsg, NetUser* User, int Frame, int Count, cons
 
 void ServerClChangeFramelist(int Index, int Flags)
 {
-	NetMsg* msg = NetMsg_Create(SessionMsg_ChangedFramelist, sizeof(int) + sizeof(int));
-	*(int*)msg->data = Net_htonl(Index);
-	*(int*)(msg->data + sizeof(Index)) = Net_htonl(Flags);
+	NetMsg* msg = NetMsg_Create(SessionMsg_ChangedFramelist, sizeof(UID) + sizeof(int) + sizeof(int));
+	int* ints = (int*)msg->data;
+	ints[1] = Net_htonl(Index);
+	ints[2] = Net_htonl(Flags);
 
 	_Server_ProcessMsg(0, &user_local, msg);
 

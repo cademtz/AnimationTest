@@ -1,12 +1,11 @@
 #include "../sockets.h"
-//#include <WinSock2.h>
-//#include <WS2tcpip.h>
 #include <stdio.h>
 
 #ifdef __clang__
 #include "winsock2_stripped.h"
 #else
 #include <WinSock2.h>
+#include <WS2tcpip.h>
 #endif
 
 #pragma comment(lib, "Ws2_32.lib")
@@ -43,7 +42,7 @@ SocketHandle Socket_Create(const char* Host, const char* Port)
 	if (!Host) // Listener
 		hints.ai_flags = AI_PASSIVE;
 
-	PADDRINFOA info;
+	PADDRINFOA info = { 0 };
 	int result = getaddrinfo(Host, Port, &hints, &info);
 	if (result != 0)
 	{

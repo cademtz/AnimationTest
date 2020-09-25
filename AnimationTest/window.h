@@ -86,6 +86,9 @@ void Bitmap_Destroy(BitmapHandle Bmp);
 extern void Bitmap_Draw_Line(BitmapHandle Bmp, int X1, int Y1, int X2, int Y2, int Width, IntColor Color);
 extern void Bitmap_Draw_Rect(BitmapHandle Bmp, int X, int Y, int W, int H, IntColor Color);
 extern void Bitmap_Draw_Bitmap(BitmapHandle Bmp, int X, int Y, BitmapHandle Src);
+extern void Bitmap_Draw_Bits(BitmapHandle Bmp, int X, int Y, IntColor* Bits, int Width, int Height);
+extern IntColor* Bitmap_CopyBits(BitmapHandle Bmp);
+extern void Bitmap_FreeBits(IntColor* Bits);
 
 // Enums
 

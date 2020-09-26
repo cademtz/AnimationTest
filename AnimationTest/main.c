@@ -424,9 +424,65 @@ void OnSeshMsg(int Msg, UID Object)
 	}
 }
 
-int main()
+void Stub_OnSeshMsg(int SessionMsg, UID Object) { } // :\
+
+int main(int argc, char* argv[])
 {
 	printf("Hello from C\n");
+
+	printf("Args: ");
+	for (int i = 0; i < argc; i++)
+		printf("\"%s\", ", argv[i]);
+	printf("\n");
+
+	char bHost = 0, * szport = 0, * szbkgcol = 0, * szwidth = 0, * szheight = 0;
+
+	for (int i = 0; i < argc; i++)
+	{
+		if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "-help") || !strcmp(argv[i], "/?"))
+		{
+			printf("-h, -help, /? : \tDisplays the help menu\n");
+			printf("-host [port] : \tBegins hosting a dedicated server on 'port'\n");
+			printf("-proj [hex_bkg_col] [width] [height] : \tFor dedicated servers. Initializes project with the given params\n");
+			return 0;
+		}
+		else if (!strcmp(argv[i], "-host"))
+		{
+			bHost = 1;
+			szport = argv[++i];
+			continue;
+		}
+		else if (!strcmp(argv[i], "-proj"))
+		{
+			szbkgcol = argv[++i];
+			szwidth = argv[++i];
+			szheight = argv[++i];
+			continue;
+		}
+	}
+
+	if (bHost)
+	{
+		IntColor bkgcol = 0xFFFFFF;
+		int width = 1280, height = 720;
+		if (szbkgcol)
+			bkgcol = (IntColor)strtol(szbkgcol, 0, 0x10);
+		printf("bkgcol: 0x%X\n", bkgcol);
+		if (szwidth)
+			width = strtol(szwidth, 0, 0);
+		printf("width: %d\n", width);
+		if (szheight)
+			height = strtol(szheight, 0, 0);
+		printf("height: %d\n", height);
+
+		my_sesh.on_seshmsg = &Stub_OnSeshMsg;
+		Session_Init(bkgcol, width, height, 24);
+		printf("Initializing session\n");
+		Server_StartAndRun(szport, 1);
+		return 0;
+	}
+
+	my_sesh.on_seshmsg = &OnSeshMsg;
 
 	mtx_play = Mutex_Create();
 	mtx_items = Mutex_Create();
@@ -533,8 +589,6 @@ int main()
 	text_hostport = Window_Item_Add(wnd_host, ItemType_TextBox, 40, 5, 100, 23, 0);
 	btn_host = Window_Item_Add(wnd_host, ItemType_Button, 5, 33, 140, 23, L"Host server");
 
-	my_sesh.on_seshmsg = &OnSeshMsg;
-
 	// Join window
 
 	args.height += 33 * 2;
@@ -561,7 +615,7 @@ int NetworkThread(void* UserData)
 		char* szPort = UniStr_ToUTF8(text);
 		Window_Item_FreeText(text);
 
-		Server_StartAndRun(szPort);
+		Server_StartAndRun(szPort, 0);
 		free(szPort);
 	}
 	else

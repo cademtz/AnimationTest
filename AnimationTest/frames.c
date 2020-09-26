@@ -1,8 +1,7 @@
-#include "project.h"
+#include "frames.h"
 #include "session.h"
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 FrameList* FrameList_Create()
 {
@@ -187,8 +186,6 @@ void FrameData_AddStroke(FrameData* Data, const UserStroke* Stroke)
 
 UserStroke* FrameData_RemoveStroke(FrameData* Data, const UserStroke* Stroke)
 {
-	assert(!BasicList_Remove_FirstOf(Data->strokes_temp, Stroke));
-
 	UserStroke* removed = (UserStroke*)BasicList_Remove_FirstOf(Data->strokes, Stroke);
 	_FrameData_RedrawSave(Data);
 	_FrameData_RedrawActive(Data);

@@ -40,8 +40,9 @@ void ServerClLeave();
 void ServerClStrokeMsg(int SessionMsg, NetUser* User, int Frame, int Count, const Vec2* Points, const DrawTool* opt_Tool);
 void ServerClChangeFramelist(int Index, int Flags);
 void ServerClGenericUserMsg(int SessionMsg);
+void ServerOnMsgStub(int SessionMsg, UID Object) { }
 
-void Server_StartAndRun(const char* Port)
+void Server_StartAndRun(const char* Port, char bDedicated)
 {
 	if (sock_server)
 	{
@@ -49,6 +50,9 @@ void Server_StartAndRun(const char* Port)
 		return;
 	}
 	printf("[Server] Starting...\n");
+
+	if (bDedicated)
+		my_sesh.on_seshmsg = &ServerOnMsgStub;
 
 	memset(&my_netint, 0, sizeof(my_netint));
 

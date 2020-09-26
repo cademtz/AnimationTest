@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 SocketHandle sock_client;
+UserStroke* stroke_local = 0, * stroke_server = 0;
 
 void ClientJoin(const UniChar* szName);
 void ClientSetFPS(int FPS);
@@ -32,6 +33,7 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 	}
 	printf("[Client] Starting...\n");
 
+	stroke_local = stroke_server = 0;
 	memset(&my_netint, 0, sizeof(my_netint));
 
 	my_netint.join = &ClientJoin;
@@ -60,7 +62,11 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 		while (1)
 		{
 			// Recv for the next message will always be at off 0
-			int count = Socket_Recv(sock_client, msgbuf + off, nextlen ? (nextlen - off) : (int)sizeof(NetMsg));
+			int rec = nextlen ? (nextlen - off) : (int)sizeof(NetMsg);
+			if (rec + off > MAX_MSGLEN)
+				rec = MAX_MSGLEN - off;
+
+			int count = Socket_Recv(sock_client, msgbuf + off, rec);
 			if (!count)
 				break;
 
@@ -156,11 +162,20 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 						Session_LockFrames();
 						if (count > 0 && idxframe >= 0 && idxframe < Session_FrameCount())
 						{
-							if (!dude->bDrawing)
+							if (dude->id == user_local->id || !dude->bDrawing)
 							{
 								DrawTool* tool = (DrawTool*)&netpoints[count];
 								Vec2 point = { Net_ntohl(netpoints->x), Net_ntohl(netpoints->y) };
-								NetUser_BeginStroke(dude, &point, tool, Session_GetFrame(idxframe)->data);
+								FrameData* dat = Session_GetFrame(idxframe)->data;
+
+								if (dude->id == user_local->id)
+								{
+									if (!stroke_server)
+										stroke_server = UserStroke_Create(user_local, tool, dat);
+									UserStroke_AddPoint(stroke_server, &point);
+								}
+								else
+									NetUser_BeginStroke(dude, &point, tool, dat);
 
 								netpoints++;
 								count--;
@@ -170,7 +185,10 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 								for (int i = 0; i < count; i++)
 								{
 									Vec2 point = { Net_ntohl(netpoints[i].x), Net_ntohl(netpoints[i].y) };
-									NetUser_AddToStroke(dude, &point);
+									if (dude->id == user_local)
+										UserStroke_AddPoint(stroke_server, &point);
+									else
+										NetUser_AddToStroke(dude, &point);
 								}
 							}
 						}
@@ -191,7 +209,22 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 					UID iduser = Net_ntohl(*(UID*)msg->data);
 					NetUser* dude = Session_GetUser(iduser);
 					if (dude)
-						NetUser_EndStroke(dude);
+					{
+						if (dude->id == user_local->id)
+						{
+							// Replace locally-drawn stroke with stroke data echoed from server
+							BasicList_Remove_FirstOf(user_local->strokes, stroke_local);
+							FrameData_RemoveStroke(stroke_local->framedat, stroke_local);
+
+							BasicList_Add(user_local->strokes, stroke_server);
+							FrameData_AddStroke(stroke_server->framedat, stroke_server);
+
+							UserStroke_Destroy(stroke_local);
+							stroke_local = 0, stroke_server = 0;
+						}
+						else
+							NetUser_EndStroke(dude);
+					}
 					else
 						printf("[Client] Failed to find user 0x%X\n", iduser);
 
@@ -375,16 +408,24 @@ void ClientChat(const UniChar* szText)
 	NetMsg_Destroy(msg);
 }
 
-void ClientBeginStroke(NetUser* User, const Vec2* Point, const DrawTool* Tool, FrameData* FrameDat) {
-	ClientStrokeMsg(SessionMsg_UserStrokeAdd, User, Session_ActiveFrameIndex(), 1, Point, Tool);
+void ClientBeginStroke(NetUser* User, const Vec2* Point, const DrawTool* Tool, FrameData* FrameDat)
+{
+	NetUser_BeginStroke(user_local, Point, Tool, FrameDat);
+	stroke_local = (UserStroke*)user_local->strokes->tail->data;
+
+	ClientStrokeMsg(SessionMsg_UserStrokeAdd, user_local, Session_ActiveFrameIndex(), 1, Point, Tool);
 }
 
-void ClientAddToStroke(NetUser* User, const Vec2* Point) {
+void ClientAddToStroke(NetUser* User, const Vec2* Point)
+{
+	NetUser_AddToStroke(user_local, Point);
 	ClientStrokeMsg(SessionMsg_UserStrokeAdd, User, Session_ActiveFrameIndex(), 1, Point, 0);
 }
 
 void ClientEndStroke(NetUser* User)
 {
+	NetUser_EndStroke(user_local);
+
 	NetMsg* msg = NetMsg_Create(SessionMsg_UserStrokeEnd, sizeof(UID));
 	Socket_Send(sock_client, (char*)msg, Net_ntohl(msg->length));
 	NetMsg_Destroy(msg);

@@ -1,5 +1,5 @@
 #pragma once
-#include "project.h"
+#include "frames.h"
 #include "threading.h"
 
 typedef struct _NetUser NetUser;

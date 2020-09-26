@@ -2,6 +2,7 @@
 #include "session.h"
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 FrameList* FrameList_Create()
 {
@@ -147,19 +148,28 @@ FrameData* FrameData_Create(unsigned int Width, unsigned int Height, IntColor Bk
 	memset(data, 0, sizeof(*data));
 
 	data->strokes = BasicList_Create();
+	data->strokes_temp = BasicList_Create();
+
 	data->bmp = Bitmap_Create(Width, Height);
 	data->saved = Bitmap_Create(Width, Height);
+	data->active = Bitmap_Create(Width, Height);
 	Bitmap_Draw_Rect(data->bmp, 0, 0, data->bmp->width, data->bmp->height, BkgColor);
 	Bitmap_Draw_Bitmap(data->saved, 0, 0, data->bmp);
+	Bitmap_Draw_Bitmap(data->active, 0, 0, data->bmp);
 
 	return data;
 }
 
 void FrameData_Destroy(FrameData* Data)
 {
+	for (BasicListItem* next = 0; next = BasicList_Next(Data->strokes_temp, next);)
+		UserStroke_Destroy((UserStroke*)next->data);
 	for (BasicListItem* next = 0; next = BasicList_Next(Data->strokes, next);)
 		UserStroke_Destroy((UserStroke*)next->data);
+
+	BasicList_Destroy(Data->strokes_temp);
 	BasicList_Destroy(Data->strokes);
+	Bitmap_Destroy(Data->active);
 	Bitmap_Destroy(Data->saved);
 	Bitmap_Destroy(Data->bmp);
 	free(Data);
@@ -167,19 +177,25 @@ void FrameData_Destroy(FrameData* Data)
 
 void FrameData_AddStroke(FrameData* Data, const UserStroke* Stroke)
 {
+	BasicList_Remove_FirstOf(Data->strokes_temp, Stroke);
+
 	BasicList_Add(Data->strokes, Stroke);
 	_FrameData_DrawStroke(Data->saved, Stroke, 0);
+	_FrameData_RedrawActive(Data);
 	Data->last_point = Stroke->points->count - 1;
 }
 
 UserStroke* FrameData_RemoveStroke(FrameData* Data, const UserStroke* Stroke)
 {
+	assert(!BasicList_Remove_FirstOf(Data->strokes_temp, Stroke));
+
 	UserStroke* removed = (UserStroke*)BasicList_Remove_FirstOf(Data->strokes, Stroke);
 	_FrameData_RedrawSave(Data);
+	_FrameData_RedrawActive(Data);
 	return removed;
 }
 
-void FrameData_UpdateStroke(FrameData* Data, const UserStroke* Stroke)
+/*void FrameData_UpdateStroke(FrameData* Data, const UserStroke* Stroke)
 {
 	int idx = BasicList_IndexOfFirst(Data->strokes, Stroke);
 	if (idx == -1)
@@ -192,7 +208,7 @@ void FrameData_UpdateStroke(FrameData* Data, const UserStroke* Stroke)
 	}
 	else
 		_FrameData_RedrawSave(Data);
-}
+}*/
 
 void FrameData_ApplyStroke(FrameData* Data, const UserStroke* Stroke)
 {
@@ -205,6 +221,16 @@ void FrameData_ApplyStroke(FrameData* Data, const UserStroke* Stroke)
 
 	if (idx != 0) // A stroke has been re-ordered
 		_FrameData_RedrawSave(Data);
+	_FrameData_RedrawActive(Data); // Order of strokes are unknown
+}
+
+void FrameData_PointsAdded(FrameData* Data, const UserStroke* Stroke, int Count)
+{
+	int idx = BasicList_IndexOfFirst(Data->strokes_temp, Stroke);
+	if (idx == -1)
+		BasicList_Add(Data->strokes_temp, Stroke);
+
+	_FrameData_DrawStroke(Data->active, Stroke, Stroke->points->count - Count - 1);
 }
 
 void _FrameData_DrawStroke(BitmapHandle Bmp, const UserStroke* Stroke, int StartPoint)
@@ -244,4 +270,11 @@ void _FrameData_RedrawSave(FrameData* Data)
 	Bitmap_Draw_Bitmap(Data->saved, 0, 0, Data->bmp);
 	for (BasicListItem* next = 0; next = BasicList_Next(Data->strokes, next);)
 		_FrameData_DrawStroke(Data->saved, (UserStroke*)next->data, 0);
+}
+
+void _FrameData_RedrawActive(FrameData* Data)
+{
+	Bitmap_Draw_Bitmap(Data->active, 0, 0, Data->saved);
+	for (BasicListItem* next = 0; next = BasicList_Next(Data->strokes_temp, next);)
+		_FrameData_DrawStroke(Data->active, (UserStroke*)next->data, 0);
 }

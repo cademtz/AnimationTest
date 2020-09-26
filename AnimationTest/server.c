@@ -250,6 +250,14 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 		Session_LockUsers();
 		Session_LockFrames();
 
+		if (!user->bDrawing)
+		{
+			printf("[Server] User \"%S\" attempted to end stroke, but didn't make one\n", user->szName);
+			Session_UnlockFrames();
+			Session_UnlockUsers();
+			break;
+		}
+
 		*(UID*)Msg->data = Net_htonl(user->id);
 		NetUser_EndStroke(user);
 		_Server_SendToAll(Msg);

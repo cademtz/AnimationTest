@@ -2,6 +2,15 @@
 #include <Windows.h>
 #include <stdio.h>
 
+//#define DEBUG_MUTEX
+
+#ifdef DEBUG_MUTEX
+#define DEBUG_MUTEX_PRINT(fmtstr, ...) printf(fmtstr, __VA_ARGS__)
+#include <intrin.h>
+#else
+#define DEBUG_MUTEX_PRINT(fmtstr, ...)
+#endif
+
 typedef struct _OSThreadImpl
 {
 	HANDLE hThread;
@@ -87,12 +96,33 @@ void Mutex_Destroy(MutexHandle Mutex) {
 
 void Mutex_Lock(MutexHandle Mutex)
 {
+#ifdef DEBUG_MUTEX
+	// Pasted stack overflow solution :)
+
+	typedef USHORT(WINAPI* CaptureStackBackTraceType)(__in ULONG, __in ULONG, __out PVOID*, __out_opt PULONG);
+	CaptureStackBackTraceType func = (CaptureStackBackTraceType)(GetProcAddress(LoadLibrary(L"kernel32.dll"), "RtlCaptureStackBackTrace"));
+
+	if (func == NULL)
+		return; // WOE 29.SEP.2010
+
+	// Quote from Microsoft Documentation:
+	// ## Windows Server 2003 and Windows XP:  
+	// ## The sum of the FramesToSkip and FramesToCapture parameters must be less than 63.
+	const int kMaxCallers = 3;
+
+	void* callers[3];
+	int count = (func)(0, kMaxCallers, callers, NULL);
+
+	DEBUG_MUTEX_PRINT("Locking Mutex\t%p at %p %p\n", Mutex, callers[1], callers[2]);
+#endif
 	DWORD result = WaitForSingleObject((HANDLE)Mutex, INFINITE);
 	if (result != WAIT_OBJECT_0)
 	{
 		printf("[ERROR] 0x%X, Failed to lock Mutex %p\n", result, Mutex);
 		DebugBreak();
 	}
+	else
+		DEBUG_MUTEX_PRINT("Lockedd Mutex\t%p\n", Mutex);
 }
 
 void Mutex_Unlock(MutexHandle Mutex)
@@ -105,4 +135,6 @@ void Mutex_Unlock(MutexHandle Mutex)
 		printf("[ERROR] 0x%X, Failed to release mutex %p: %s\n", code, Mutex, buf);
 		DebugBreak();
 	}
+	else
+		DEBUG_MUTEX_PRINT("Unlockd Mutex\t%p\n", Mutex);
 }

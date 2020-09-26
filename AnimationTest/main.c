@@ -85,7 +85,7 @@ int OnMouse(WndHandle Wnd, int X, int Y, int MouseBtn, int Down)
 		if (active && Down && tool_active)
 		{
 			Vec2 point = { X - canvasX, Y - canvasY };
-			if (Down > 1)
+			if (user_local->bDrawing)
 				my_netint.addToStroke(user_local, &point);
 			else
 				my_netint.beginStroke(user_local, &point, tool_active, active->data);
@@ -93,10 +93,8 @@ int OnMouse(WndHandle Wnd, int X, int Y, int MouseBtn, int Down)
 		}
 		else if (!Down)
 		{
-			Session_LockUsers();
 			if (user_local->bDrawing)
 				my_netint.endStroke(user_local);
-			Session_UnlockUsers();
 		}
 		if (!bPlaying)
 			Session_UnlockFrames();
@@ -217,7 +215,7 @@ int OnWndMsg(WndHandle Wnd, int WndMsg)
 
 			FrameItem* frame = Session_ActiveFrame();
 			if (frame)
-				Window_Draw_Bitmap(Wnd, frame->data->saved, canvasX, canvasY);
+				Window_Draw_Bitmap(Wnd, frame->data->active, canvasX, canvasY);
 
 			if (!bPlaying)
 				Session_UnlockFrames();

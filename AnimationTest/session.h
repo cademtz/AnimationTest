@@ -16,6 +16,7 @@ typedef struct _NetSession
 
 	BasicList* users;
 	BasicList* _strokes;
+	BasicListItem* _stroke_last;
 	FrameList* _frames;
 	FrameItem* _frame_active;
 	IntColor bkgcol;

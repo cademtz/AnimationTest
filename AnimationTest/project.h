@@ -26,17 +26,18 @@ void FrameData_Destroy(FrameData* Data);
 
 void FrameData_AddStroke(FrameData* Data, const UserStroke* Stroke);
 UserStroke* FrameData_RemoveStroke(FrameData* Data, const UserStroke* Stroke);
-void FrameData_UpdateStroke(FrameData* Data, const UserStroke* Stroke);
+//void FrameData_UpdateStroke(FrameData* Data, const UserStroke* Stroke);
 void FrameData_ApplyStroke(FrameData* Data, const UserStroke* Stroke);
+void FrameData_PointsAdded(FrameData* Data, const UserStroke* Stroke, int Count);
 
 void _FrameData_DrawStroke(BitmapHandle Bmp, const UserStroke* Stroke, int StartPoint);
 void _FrameData_RedrawSave(FrameData* Data);
+void _FrameData_RedrawActive(FrameData* Data);
 
 typedef struct _FrameData
 {
-	BitmapHandle bmp;
-	BitmapHandle saved;
-	BasicList* strokes;
+	BitmapHandle bmp, saved, active;
+	BasicList* strokes, * strokes_temp;
 	int last_point;
 } FrameData;
 

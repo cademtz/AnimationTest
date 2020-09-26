@@ -444,9 +444,9 @@ char _Window_IntBox_GetSetRange_Impl(WndItem* IntBox, int* opt_getMinMax, int* o
 		return 0;
 
 	if (opt_getMinMax)
-		SendMessage(IntBox->_id, UDM_GETRANGE32, &opt_getMinMax[0], &opt_getMinMax[1]);
+		SendNotifyMessage(IntBox->_id, UDM_GETRANGE32, &opt_getMinMax[0], &opt_getMinMax[1]);
 	if (opt_setMinMax)
-		SendMessage(IntBox->_id, UDM_SETRANGE32, opt_setMinMax[0], opt_setMinMax[1]);
+		SendNotifyMessage(IntBox->_id, UDM_SETRANGE32, opt_setMinMax[0], opt_setMinMax[1]);
 
     return 1;
 }

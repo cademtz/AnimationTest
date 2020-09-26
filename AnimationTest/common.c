@@ -117,7 +117,10 @@ void* BasicList_Remove_At(BasicList* List, int Index)
 
 void* BasicList_Remove_FirstOf(BasicList* List, const void* Data)
 {
-	for (BasicListItem* prev = 0, * item = List->head;; prev = item, item = item->_next)
+	if (!List->head)
+		return 0;
+
+	for (BasicListItem* prev = 0, * item = List->head; item; prev = item, item = item->_next)
 	{
 		if (item->data == Data)
 		{

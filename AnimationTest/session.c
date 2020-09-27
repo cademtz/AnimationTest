@@ -1,6 +1,5 @@
 #include "session.h"
 #include "sockets.h"
-#include <stdio.h>
 
 NetSession my_sesh = { 0 };
 NetUser* user_local = 0;
@@ -94,19 +93,21 @@ void Session_RemoveFrame(int Index, NetUser* opt_User)
 		{
 			UserStroke* stroke = (UserStroke*)next->data;
 			BasicList_Remove_FirstOf(my_sesh._strokes, stroke);
-			BasicList_Remove_FirstOf(stroke->user->strokes, stroke);
+			if (stroke->user)
+				BasicList_Remove_FirstOf(stroke->user->strokes, stroke);
 		}
 		FrameData_Destroy(framedat);
 	}
 
-	my_sesh.on_seshmsg(SessionMsg_SwitchedFrame, id);
+	my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, id);
 
 	int count = my_sesh._frames->count;
-	if (count >= Index)
+	if (my_sesh._index_active >= count)
 	{
 		my_sesh._index_active = count - 1;
 		my_sesh._frame_active = FrameList_At(my_sesh._frames, my_sesh._index_active);
-		my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, id);
+		if (user_local)
+			my_sesh.on_seshmsg(SessionMsg_SwitchedFrame, user_local->id);
 	}
 }
 
@@ -230,7 +231,6 @@ char NetUser_RedoStroke(NetUser* User)
 		FrameData_AddStroke(stroke->framedat, stroke);
 		BasicList_Add(my_sesh._strokes, stroke);
 		my_sesh.on_seshmsg(SessionMsg_UserStrokeRedo, User->id);
-		printf("Redo: User %S now has %d strokes\n", User->szName, User->strokes->count);
 		return 1;
 	}
 	return 0;

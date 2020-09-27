@@ -2,6 +2,7 @@
 #include "sockets.h"
 #include "threading.h"
 #include "session.h"
+#include "window.h"
 #include <stdio.h>
 
 SocketHandle sock_client;
@@ -49,8 +50,9 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 	my_netint.redoStroke = &ClientRedo;
 	my_netint.leave = &ClientLeave;
 
+	printf("[Client] Connecting to %s:%s...\n", Host, Port);
 	sock_client = Socket_Create(Host, Port);
-	if (Socket_Connect(sock_client))
+	if (sock_client && Socket_Connect(sock_client))
 	{
 		ClientJoin(szName);
 
@@ -328,9 +330,15 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 		free(msgbuf);
 	}
 	else
-		printf("[Client] Failed to connect");
+	{
+		printf("[Client] Failed to connect.\n");
+		OpenDialog(DialogType_Error, L"Failed to connect to server\nSee console for details\n");
+	}
 
-	Socket_Destroy(sock_client);
+	if (sock_client)
+		Socket_Destroy(sock_client);
+	sock_client = 0;
+
 	Client_StartAndRun_Local();
 
 	printf("[Client] Client closed.\n");

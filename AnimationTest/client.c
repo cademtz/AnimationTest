@@ -155,49 +155,59 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 					int count = Net_ntohl(*(int*)next);
 					next += sizeof(count);
 
-					if (dude)
+					Vec2* netpoints = (Vec2*)next;
+					DrawTool* tool = 0;
+					if (!dude || (dude->id == user_local->id || !dude->bDrawing))
+						tool = (DrawTool*)&netpoints[count];
+
+					Session_LockFrames();
+					if (count > 0 && idxframe >= 0 && idxframe < Session_FrameCount())
 					{
-						Vec2* netpoints = (Vec2*)next;
-
-						Session_LockFrames();
-						if (count > 0 && idxframe >= 0 && idxframe < Session_FrameCount())
+						FrameData* dat = Session_GetFrame(idxframe)->data;
+						if (tool && dude)
 						{
-							if (dude->id == user_local->id || !dude->bDrawing)
+							Vec2 point = { Net_ntohl(netpoints->x), Net_ntohl(netpoints->y) };
+
+							if (dude->id == user_local->id)
 							{
-								DrawTool* tool = (DrawTool*)&netpoints[count];
-								Vec2 point = { Net_ntohl(netpoints->x), Net_ntohl(netpoints->y) };
-								FrameData* dat = Session_GetFrame(idxframe)->data;
-
-								if (dude->id == user_local->id)
-								{
-									if (!stroke_server)
-										stroke_server = UserStroke_Create(user_local, tool, dat);
-									UserStroke_AddPoint(stroke_server, &point);
-								}
-								else
-									NetUser_BeginStroke(dude, &point, tool, dat);
-
-								netpoints++;
-								count--;
+								if (!stroke_server)
+									stroke_server = UserStroke_Create(user_local, tool, dat);
+								UserStroke_AddPoint(stroke_server, &point);
 							}
-							if (count)
+							else
+								NetUser_BeginStroke(dude, &point, tool, dat);
+
+							netpoints++;
+							count--;
+						}
+						if (count)
+						{
+							UserStroke* stroke = 0;
+							if (dude && dude->id == user_local)
+								stroke = stroke_server;
+							else if (!dude)
+								stroke = UserStroke_Create(0, tool, dat);
+
+							for (int i = 0; i < count; i++)
 							{
-								for (int i = 0; i < count; i++)
-								{
-									Vec2 point = { Net_ntohl(netpoints[i].x), Net_ntohl(netpoints[i].y) };
-									if (dude->id == user_local)
-										UserStroke_AddPoint(stroke_server, &point);
-									else
-										NetUser_AddToStroke(dude, &point);
-								}
+								Vec2 point = { Net_ntohl(netpoints[i].x), Net_ntohl(netpoints[i].y) };
+								if (stroke)
+									UserStroke_AddPoint(stroke, &point);
+								else
+									NetUser_AddToStroke(dude, &point);
+							}
+
+							if (!dude)
+							{
+								FrameData_AddStroke(stroke->framedat, stroke);
+								BasicList_Add(my_sesh._strokes, stroke);
+								my_sesh.on_seshmsg(SessionMsg_UserStrokeAdd, -1);
 							}
 						}
-						else
-							printf("[Client] Invalid stroke data from \"%S\"\n", dude->szName);
-						Session_UnlockFrames();
 					}
 					else
-						printf("[Client] Failed to find user 0x%X\n", iduser);
+						printf("[Client] Invalid stroke data from \"%S\"\n", dude->szName);
+					Session_UnlockFrames();
 					Session_UnlockUsers();
 				}
 					break;
@@ -292,15 +302,9 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 					if (idxframe >= 0)
 					{
 						if (flags) // Boolean for now. True = add, false = remove
-						{
-							printf("Inserting frame at %d\n", idxframe);
 							Session_InsertFrame(idxframe, dude);
-						}
 						else // Remove
-						{
-							printf("Removing frame at %d\n", idxframe);
 							Session_RemoveFrame(idxframe, dude);
-						}
 					}
 
 					if (dude == user_local)

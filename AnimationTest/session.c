@@ -132,8 +132,13 @@ void Session_AddUser(NetUser* User)
 void Session_RemoveUser(NetUser* User)
 {
 	my_sesh.on_seshmsg(SessionMsg_UserLeave, User->id);
-	if (BasicList_Remove_FirstOf(my_sesh.users, User))
-		NetUser_Destroy(User);
+	BasicList_Remove_FirstOf(my_sesh.users, User);
+
+	for (BasicListItem* next = 0; next = BasicList_Next(User->strokes, next);)
+	{
+		UserStroke* stroke = (UserStroke*)next->data;
+		stroke->user = 0;
+	}
 }
 
 NetUser* Session_GetUser(UID IdUser)
@@ -181,7 +186,6 @@ void NetUser_BeginStroke(NetUser* User, const Vec2* Point, const DrawTool* Tool,
 	UserStroke_AddPoint(stroke, Point);
 	BasicList_Add(User->strokes, stroke);
 	BasicList_Add(my_sesh._strokes, stroke);
-	//FrameData_AddStroke(FrameDat, stroke);
 	FrameData_PointsAdded(FrameDat, stroke, 1);
 
 	my_sesh.on_seshmsg(SessionMsg_UserStrokeAdd, User->id);
@@ -192,7 +196,6 @@ void NetUser_AddToStroke(NetUser* User, const Vec2* Point)
 	UserStroke* stroke = (UserStroke*)User->strokes->tail->data;
 	UserStroke_AddPoint(stroke, Point);
 	FrameData_PointsAdded(stroke->framedat, stroke, 1);
-	//FrameData_UpdateStroke(stroke->framedat, stroke);
 	my_sesh.on_seshmsg(SessionMsg_UserStrokeAdd, User->id);
 }
 
@@ -201,7 +204,6 @@ void NetUser_EndStroke(NetUser* User)
 	User->bDrawing = 0;
 	UserStroke* stroke = (UserStroke*)User->strokes->tail->data;
 	FrameData_AddStroke(stroke->framedat, stroke);
-	printf("End: User %S now has %d strokes\n", User->szName, User->strokes->count);
 	my_sesh.on_seshmsg(SessionMsg_UserStrokeEnd, User->id);
 }
 
@@ -214,7 +216,6 @@ char NetUser_UndoStroke(NetUser* User)
 		FrameData_RemoveStroke(stroke->framedat, stroke);
 		BasicList_Remove_FirstOf(my_sesh._strokes, stroke);
 		my_sesh.on_seshmsg(SessionMsg_UserStrokeUndo, User->id);
-		printf("Undo: User %S now has %d strokes\n", User->szName, User->strokes->count);
 		return 1;
 	}
 	return 0;

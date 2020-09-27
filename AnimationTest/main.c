@@ -128,7 +128,6 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 				Session_LockFrames();
 
 				int idx = Session_ActiveFrameIndex() + (Key == Key_Comma ? -1 : 1);
-				//my_netint.setFrame(idx);
 				Session_SetFrame(idx, user_local);
 
 				Session_UnlockFrames();
@@ -143,7 +142,6 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 			Session_LockFrames();
 			int idx = Session_ActiveFrameIndex() + 1;
 			my_netint.insertFrame(idx);
-			//my_netint.setFrame(idx);
 			Session_UnlockFrames();
 		}
 		Mutex_Unlock(mtx_play);
@@ -392,8 +390,15 @@ void OnSeshMsg(int Msg, UID Object)
 				stroke = (UserStroke*)user_local->strokes->tail->data;
 			Session_SetFrame(Session_FrameData_GetIndex(stroke->framedat), user_local);
 		}
-	case SessionMsg_UserStrokeAdd:
 		Window_Redraw(wnd_main, 0);
+		break;
+	case SessionMsg_UserStrokeAdd:
+	{
+		NetUser* user = Session_GetUser(Object);
+		UserStroke* stroke = (UserStroke*)my_sesh._strokes->tail->data;
+		if (stroke->framedat == Session_ActiveFrame()->data)
+			Window_Redraw(wnd_main, 0);
+	}
 		break;
 	case SessionMsg_ChangedFPS:
 		if (!item)

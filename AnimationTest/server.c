@@ -173,9 +173,12 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 				Socket_Send(Client, (char*)strokemsg, Net_ntohl(strokemsg->length));
 				NetMsg_Destroy(strokemsg);
 
-				strokemsg = _Server_MakeGenericUserMsg(SessionMsg_UserStrokeEnd, stroke->user);
-				Socket_Send(Client, (char*)strokemsg, Net_ntohl(strokemsg->length));
-				NetMsg_Destroy(strokemsg);
+				if (stroke->user)
+				{
+					strokemsg = _Server_MakeGenericUserMsg(SessionMsg_UserStrokeEnd, stroke->user);
+					Socket_Send(Client, (char*)strokemsg, Net_ntohl(strokemsg->length));
+					NetMsg_Destroy(strokemsg);
+				}
 			}
 
 			Session_UnlockFrames();
@@ -198,6 +201,8 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 		{
 			*(UID*)Msg->data = Net_htonl(user->id);
 			_Server_SendToAll(Msg);
+			Session_RemoveUser(user);
+			user = *pUser = 0;
 		}
 		break;
 	case SessionMsg_UserStrokeAdd:
@@ -256,7 +261,6 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 
 		if (!user->bDrawing)
 		{
-			printf("[Server] User \"%S\" attempted to end stroke, but didn't make one\n", user->szName);
 			Session_UnlockFrames();
 			Session_UnlockUsers();
 			break;
@@ -341,10 +345,13 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 			if (valid)
 			{
 				_Server_SendToAll(Msg);
-				if (user->id == user_local->id)
+				if (user_local)
 				{
-					int set = idxframe > Session_FrameCount() ? Session_FrameCount() - 1 : idxframe;
-					Session_SetFrame(set, user_local);
+					if (user->id == user_local->id)
+					{
+						int set = idxframe > Session_FrameCount() ? Session_FrameCount() - 1 : idxframe;
+						Session_SetFrame(set, user_local);
+					}
 				}
 			}
 			Session_UnlockFrames();
@@ -403,8 +410,18 @@ int _Server_ClientThread(void* UserDat)
 			BasicList_Remove_FirstOf(list_clients, next->data);
 			break;
 		}
+		free(netcl);
 	}
 	Mutex_Unlock(mtx_clients);
+
+	if (user)
+	{
+		NetMsg* leave = _Server_MakeGenericUserMsg(SessionMsg_UserLeave, user);
+		_Server_SendToAll(leave);
+		NetMsg_Destroy(leave);
+		Session_RemoveUser(user);
+		NetUser_Destroy(user);
+	}
 
 	Socket_Destroy(Client);
 	free(msgbuf);
@@ -450,7 +467,7 @@ NetMsg* _Server_MakeStrokeMsg(const UserStroke* Stroke)
 
 	NetMsg* msg = NetMsg_Create(SessionMsg_UserStrokeAdd, length);
 	int* ints = (int*)msg->data;
-	ints[0] = Net_htonl(Stroke->user->id);
+	ints[0] = Net_htonl(Stroke->user ? Stroke->user->id : -1);
 	ints[1] = Net_htonl(frame);
 	ints[2] = Net_htonl(cpoints);
 
@@ -466,10 +483,10 @@ NetMsg* _Server_MakeStrokeMsg(const UserStroke* Stroke)
 	return msg;
 }
 
-NetMsg* _Server_MakeGenericUserMsg(int SessionMsg, const NetUser* User)
+NetMsg* _Server_MakeGenericUserMsg(int SessionMsg, const NetUser* opt_User)
 {
 	NetMsg* msg = NetMsg_Create(SessionMsg, sizeof(UID));
-	*(UID*)msg->data = Net_htonl(User->id);
+	*(UID*)msg->data = Net_htonl(opt_User ? opt_User->id : -1);
 	return msg;
 }
 

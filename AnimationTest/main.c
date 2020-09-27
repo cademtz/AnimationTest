@@ -29,7 +29,7 @@ ThreadHandle thread_play = 0;
 MutexHandle mtx_play;
 
 MenuItem* mProperties, * mHost, * mJoin;
-WndItem* int_frame, * int_fps, * int_brush, * btn_add, * btn_rem, * btn_clear, * btn_play, * bBrush, * bEraser;
+WndItem* int_frame, * int_fps, * int_brush, * btn_add, * btn_dup, * btn_rem, * btn_clear, * btn_play, * bBrush, * bEraser;
 ColorPicker* picker_brush, * picker_bkg;
 int lLastX, lLastY, mLastX, mLastY, canvasX = 0, canvasY = 35;
 char bPlaying = 0;
@@ -115,9 +115,17 @@ int OnMouse(WndHandle Wnd, int X, int Y, int MouseBtn, int Down)
 
 int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 {
+	static char bShift = 0, bCtrl = 0, bAlt = 0;
+
 	// Main window
 	switch (Key)
 	{
+	case Key_Shift:
+		bShift = bDown; break;
+	case Key_Ctrl:
+		bCtrl = bDown; break;
+	case Key_Alt:
+		bAlt = bDown; break;
 	case Key_Comma: // <
 	case Key_Period: // >
 		if (bDown)
@@ -141,7 +149,7 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 		{
 			Session_LockFrames();
 			int idx = Session_ActiveFrameIndex() + 1;
-			my_netint.insertFrame(idx);
+			my_netint.insertFrame(idx, 0);
 			Session_UnlockFrames();
 		}
 		Mutex_Unlock(mtx_play);
@@ -160,13 +168,17 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 	}
 	case 'Z':
 	case 'Y':
-		if (bDown)
+		if (bCtrl && bDown)
 		{
+			char undo = Key == 'Z';
+			if (bShift && Key == 'Z')
+				undo = 0;
+
 			Mutex_Lock(mtx_play);
 			if (!bPlaying)
 			{
 				Session_LockFrames();
-				if (Key == 'Z')
+				if (undo)
 					my_netint.undoStroke();
 				else
 					my_netint.redoStroke();
@@ -179,7 +191,7 @@ int OnKeyboard(WndHandle Wnd, char Key, char bDown)
 	case Key_LBracket:
 	case Key_RBracket:
 		Session_LockUsers();
-		if (user_local->bDrawing && tool_active)
+		if (bDown && !user_local->bDrawing && tool_active)
 		{
 			tool_active->Width += Key == Key_LBracket ? -1 : 1;
 			SetTool(tool_active); // Lazy way to make things update
@@ -244,7 +256,6 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 			if (!bPlaying)
 				Session_LockFrames();
 			Session_SetFrame(Data->newval.i, user_local);
-			//my_netint.setFrame(Data->newval.i);
 			if (!bPlaying)
 				Session_UnlockFrames();
 			Window_Redraw(int_frame->wnd, 0);
@@ -270,11 +281,11 @@ int OnItemMsg(WndItem* Item, int ItemMsg, ItemMsgData* Data)
 
 		// Main window
 
-		if (Item == btn_add)
+		if (Item == btn_add || Item == btn_dup)
 		{
+			char dup = Item == btn_dup;
 			Session_LockFrames();
-			int idx = Session_ActiveFrameIndex() + 1;
-			my_netint.insertFrame(idx);
+			my_netint.insertFrame(Session_ActiveFrameIndex() + !dup, dup);
 			Session_UnlockFrames();
 		}
 		else if (Item == btn_rem)
@@ -518,13 +529,15 @@ int main(int argc, char* argv[])
 	int nextx = 5;
 	btn_add = Window_Item_Add(wnd_main, ItemType_Button, 5, 5, 40, 23, L"Add");
 	nextx += btn_add->width + 5;
+	btn_dup = Window_Item_Add(wnd_main, ItemType_Button, nextx, btn_add->y, 40, btn_add->height, L"Dup");
+	nextx += btn_dup->width + 5;
 	btn_rem = Window_Item_Add(wnd_main, ItemType_Button, nextx, btn_add->y, 70, btn_add->height, L"Remove");
 	nextx += btn_rem->width + 5;
 	btn_play = Window_Item_Add(wnd_main, ItemType_Button, nextx, btn_add->y, 40, btn_add->height, ICON_PLAY);
 	nextx += btn_play->width + 5;
 	WndItem* tmp = Window_Item_Add(wnd_main, ItemType_Label, nextx, btn_add->y, 30, btn_add->height, L"Frame:");
 	nextx += tmp->width + 5;
-	int_frame = Window_Item_Add(wnd_main, ItemType_IntBox, nextx, btn_add->y, 100, btn_add->height, L"int_frame");
+	int_frame = Window_Item_Add(wnd_main, ItemType_IntBox, nextx, btn_add->y, 50, btn_add->height, L"int_frame");
 	nextx += int_frame->width + 5;
 	tmp = Window_Item_Add(wnd_main, ItemType_Label, nextx, btn_add->y, 20, btn_add->height, L"FPS: ");
 	nextx += tmp->width + 5;

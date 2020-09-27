@@ -31,7 +31,7 @@ void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsi
 
 void Session_SetFPS(int FPS);
 void Session_SetFrame(int Index, NetUser* opt_User);
-void Session_InsertFrame(int Index, NetUser* opt_User);
+char Session_InsertFrame(int Index, char bDup, NetUser* opt_User);
 void Session_RemoveFrame(int Index, NetUser* opt_User);
 FrameItem* Session_GetFrame(int Index);
 int Session_FrameData_GetIndex(const FrameData* FrameDat);
@@ -126,7 +126,7 @@ typedef struct _NetInterface
 	void(*join)(const UniChar* szName);
 	void(*setFPS)(int FPS);
 	void(*setFrame)(int Index);
-	void(*insertFrame)(int Index);
+	void(*insertFrame)(int Index, char bDup);
 	void(*removeFrame)(int Index);
 	void(*chat)(const UniChar* szText);
 	void(*beginStroke)(NetUser* User, const Vec2* Point, const DrawTool* Tool, FrameData* FrameDat);
@@ -138,3 +138,10 @@ typedef struct _NetInterface
 } NetInterface;
 
 extern NetInterface my_netint;
+
+enum EFrameFlags
+{
+	FrameFlag_Remove = 0,
+	FrameFlag_Insert,
+	FrameFlag_Dup,
+};

@@ -27,7 +27,7 @@ NetMsg* _Server_MakeGenericUserMsg(int SessionMsg, const NetUser* User);
 void ServerClJoin(const UniChar* szName);
 void ServerClSetFPS(int FPS);
 void ServerClSetFrame(int Index);
-void ServerClInsertFrame(int Index);
+void ServerClInsertFrame(int Index, char bDup);
 void ServerClRemoveFrame(int Index);
 void ServerClChat(const UniChar* szText);
 void ServerClBeginStroke(NetUser* User, const Vec2* Point, const DrawTool* Tool, FrameData* FrameDat);
@@ -155,11 +155,21 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 			data = (int*)framemsg->data;
 			data[0] = Net_htonl(0); // User 0 (null)
 			data[1] = Net_htonl(0); // Index 0
-			data[2] = Net_htonl(1); // Adding frame
+			data[2] = Net_htonl(FrameFlag_Insert);
 
 			// TODO: Instead of spamming the client with frames, how about implement framecount in SessionMsg_Init
-			for (int i = 0; i < Session_FrameCount() - 1; i++)
+			FrameItem* frame = my_sesh._frames->head;
+			char dup = frame->_next && frame->_next->data == frame->data;
+			for (int i = 1; frame = frame->_next; i++)
+			{
+				data[0] = i;
+				data[2] = Net_htonl(dup ? FrameFlag_Dup : FrameFlag_Insert);
+
 				Socket_Send(Client, (char*)framemsg, Net_ntohl(framemsg->length));
+
+				FrameItem* next = FrameList_Next(my_sesh._frames, frame);
+				dup = next && next->data == frame->data;
+			}
 
 			NetMsg_Destroy(framemsg);
 
@@ -333,14 +343,26 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 			int flags = Net_ntohl(ints[2]);
 
 			int framecount = Session_FrameCount();
-			char valid = 1;
+			char valid = 0;
 			if (idxframe >= 0)
 			{
-				if (flags && idxframe <= framecount) // Boolean for now. True = add, false = remove
-					Session_InsertFrame(idxframe, user);
-				else if (!flags && idxframe < framecount) // Remove
-					Session_RemoveFrame(idxframe, user);
-				else valid = 0;
+				char dup = 0;
+				switch (flags)
+				{
+				case FrameFlag_Dup:
+					dup = 1;
+				case FrameFlag_Insert:
+					if (idxframe <= framecount)
+						valid = Session_InsertFrame(idxframe, dup, user);
+					break;
+				case FrameFlag_Remove:
+					if (idxframe < framecount)
+					{
+						Session_RemoveFrame(idxframe, user);
+						valid = 1;
+					}
+					break;
+				}
 			}
 			if (valid)
 			{
@@ -521,12 +543,12 @@ void ServerClSetFrame(int Index)
 	free(sendmsg);
 }
 
-void ServerClInsertFrame(int Index) {
-	ServerClChangeFramelist(Index, 1);
+void ServerClInsertFrame(int Index, char bDup) {
+	ServerClChangeFramelist(Index, bDup ? FrameFlag_Dup : FrameFlag_Insert);
 }
 
 void ServerClRemoveFrame(int Index) {
-	ServerClChangeFramelist(Index, 0);
+	ServerClChangeFramelist(Index, FrameFlag_Remove);
 }
 
 void ServerClChat(const UniChar* szText)

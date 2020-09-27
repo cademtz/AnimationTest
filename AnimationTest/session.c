@@ -35,7 +35,7 @@ void Session_Init(IntColor BkgCol, unsigned int Width, unsigned int Height, unsi
 
 	user_local = 0;
 
-	Session_InsertFrame(0, 0);
+	Session_InsertFrame(0, 0, 0);
 	Session_SetFrame(0, 0);
 
 	my_sesh.on_seshmsg(SessionMsg_SwitchedFrame, 0);
@@ -71,12 +71,29 @@ void Session_SetFrame(int Index, NetUser* opt_User)
 	my_sesh.on_seshmsg(SessionMsg_SwitchedFrame, opt_User ? opt_User->id : 0);
 }
 
-void Session_InsertFrame(int Index, NetUser* opt_User)
+char Session_InsertFrame(int Index, char bDup, NetUser* opt_User)
 {
-	FrameData* data = FrameData_Create(my_sesh.width, my_sesh.height, my_sesh.bkgcol);
-	FrameList_Insert(my_sesh._frames, data, Index);
+	if (Index < 0)
+		return 0;
 
+	int count = Session_FrameCount();
+	FrameData* data = 0;
+	if (bDup)
+		data = Session_GetFrame(Index >= count ? count - 1 : Index)->data;
+	else
+	{
+		if (Index > 0 && Index < count)
+		{
+			FrameItem* item = Session_GetFrame(Index - 1);
+			if (item->_next && item->_next->data == item->data)
+				return 0; // No. Bad. No inserting duplicate frames between 
+		}
+		data = FrameData_Create(my_sesh.width, my_sesh.height, my_sesh.bkgcol);
+	}
+
+	FrameList_Insert(my_sesh._frames, data, Index);
 	my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, opt_User ? opt_User->id : 0);
+	return 1;
 }
 
 void Session_RemoveFrame(int Index, NetUser* opt_User)

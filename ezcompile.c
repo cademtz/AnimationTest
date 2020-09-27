@@ -5,7 +5,7 @@
 #include "AnimationTest/client.c"
 #include "AnimationTest/server.c"
 #include "AnimationTest/common.c"
-#include "AnimationTest/project.c"
+#include "AnimationTest/frames.c"
 #include "AnimationTest/session.c"
 #include "AnimationTest/colorpicker.c"
 

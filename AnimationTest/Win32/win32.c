@@ -113,8 +113,8 @@ OSData* _Window_Create_Impl(WndHandle Data)
 	if (!win32->hWnd)
 	{
 		DWORD error = GetLastError();
-		WCHAR buf[256];
-		FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM, 0, error, 0, &buf, sizeof(buf) / sizeof(buf[0]), 0);
+		TCHAR buf[256];
+		FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, 0, error, 0, &buf, sizeof(buf) / sizeof(buf[0]), 0);
 		printf("Error creating window: (%X) %S\n", error, buf);
 	}
 
@@ -540,7 +540,7 @@ IntColor* Bitmap_CopyBits(BitmapHandle Bmp)
 	size_t size = (size_t)Bmp->width * Bmp->height * sizeof(IntColor);
 	IntColor* bits = (IntColor*)malloc(size);
 	memcpy(bits, Bmp->_data->bits, size);
-	return size;
+	return bits;
 }
 
 void Bitmap_FreeBits(IntColor* Bits) {
@@ -590,7 +590,7 @@ void HandleMouse(WndHandle Wnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	WndHandle wnd = GetWindowLongPtr(hWnd, 0);
+	WndHandle wnd = (WndHandle)GetWindowLongPtr(hWnd, 0);
 
 	switch (uMsg)
 	{
@@ -625,6 +625,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 						key = Key_Comma; break;
 					case VK_OEM_PERIOD:
 						key = Key_Period; break;
+					case VK_SHIFT:
+					case VK_LSHIFT:
+					case VK_RSHIFT:
+						key = Key_Shift; break;
 					case VK_CONTROL:
 					case VK_LCONTROL:
 					case VK_RCONTROL:
@@ -792,8 +796,8 @@ const char* UTF8String(const LPTSTR* Text)
 {
 #ifdef UNICODE
 	size_t len = wcslen(Text) + 1;
-	const char* text = malloc(len);
-	WideCharToMultiByte(CP_UTF8, WC_COMPOSITECHECK, Text, -1, text, len, 0, 0);
+	char* text = malloc(len);
+	WideCharToMultiByte(CP_UTF8, WC_COMPOSITECHECK, (LPCWCH)Text, -1, text, len, 0, 0);
 	return text;
 #else
 	return (const char*)Text;

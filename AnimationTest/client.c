@@ -11,7 +11,7 @@ UserStroke* stroke_local = 0, * stroke_server = 0;
 void ClientJoin(const UniChar* szName);
 void ClientSetFPS(int FPS);
 void ClientSetFrame(int Index);
-void ClientInsertFrame(int Index);
+void ClientInsertFrame(int Index, char bDup);
 void ClientRemoveFrame(int Index);
 void ClientChat(const UniChar* szText);
 void ClientBeginStroke(NetUser* User, const Vec2* Point, const DrawTool* Tool, FrameData* FrameDat);
@@ -185,7 +185,7 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 						if (count)
 						{
 							UserStroke* stroke = 0;
-							if (dude && dude->id == user_local)
+							if (dude && dude->id == user_local->id)
 								stroke = stroke_server;
 							else if (!dude)
 								stroke = UserStroke_Create(0, tool, dat);
@@ -303,10 +303,17 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 
 					if (idxframe >= 0)
 					{
-						if (flags) // Boolean for now. True = add, false = remove
-							Session_InsertFrame(idxframe, dude);
-						else // Remove
-							Session_RemoveFrame(idxframe, dude);
+						char dup = 0;
+						switch (flags)
+						{
+						case FrameFlag_Dup:
+							dup = 1;
+						case FrameFlag_Insert:
+							Session_InsertFrame(idxframe, dup, dude);
+							break;
+						case FrameFlag_Remove:
+							Session_RemoveFrame(idxframe, dude); break;
+						}
 					}
 
 					if (dude == user_local)
@@ -346,7 +353,7 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 
 void LocalJoin(const UniChar* szName);
 void LocalSetFrame(int Index);
-void LocaLInsertFrame(int Index);
+void LocaLInsertFrame(int Index, char bDup);
 void LocaLRemoveFrame(int Index);
 void LocalLeave() { }
 void LocalChat(const UniChar* szText) { }
@@ -403,12 +410,12 @@ void ClientSetFrame(int Index)
 	free(sendmsg);
 }
 
-void ClientInsertFrame(int Index) {
-	ClientChangeFramelist(Index, 1);
+void ClientInsertFrame(int Index, char bDup) {
+	ClientChangeFramelist(Index, bDup ? FrameFlag_Dup : FrameFlag_Insert);
 }
 
 void ClientRemoveFrame(int Index) {
-	ClientChangeFramelist(Index, 0);
+	ClientChangeFramelist(Index, FrameFlag_Remove);
 }
 
 void ClientChat(const UniChar* szText)
@@ -465,9 +472,9 @@ void LocalSetFrame(int Index) {
 	Session_SetFrame(Index, user_local);
 }
 
-void LocaLInsertFrame(int Index)
+void LocaLInsertFrame(int Index, char bDup)
 {
-	Session_InsertFrame(Index, user_local);
+	Session_InsertFrame(Index, bDup, user_local);
 	Session_SetFrame(Index, user_local);
 }
 

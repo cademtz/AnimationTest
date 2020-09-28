@@ -293,6 +293,7 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 					break;*/
 				case SessionMsg_ChangedFramelist:
 				{
+					Session_LockUsers();
 					Session_LockFrames();
 					int* ints = (int*)msg->data;
 					UID iduser = Net_ntohl(ints[0]);
@@ -300,6 +301,7 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 					int flags = Net_ntohl(ints[2]);
 
 					NetUser* dude = Session_GetUser(iduser);
+					int active = Session_ActiveFrameIndex();
 
 					if (idxframe >= 0)
 					{
@@ -322,7 +324,18 @@ void Client_StartAndRun(const UniChar* szName, const char* Host, const char* Por
 						Session_SetFrame(set, user_local);
 					}
 
+					printf("[Client] FrameList: ");
+					for (FrameItem* frame = 0; frame = FrameList_Next(my_sesh._frames, frame);)
+					{
+						if (frame->_next && frame->_next->data == frame->data)
+							printf("-");
+						else
+							printf("o");
+					}
+					printf("\n");
+
 					Session_UnlockFrames();
+					Session_UnlockUsers();
 				}
 					break;
 				default:

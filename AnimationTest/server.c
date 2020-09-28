@@ -144,7 +144,10 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 
 			NetClient* netcl = (NetClient*)malloc(sizeof(*netcl));
 			netcl->sock = Client, netcl->user = user;
+
+			Mutex_Lock(mtx_clients);
 			BasicList_Add(list_clients, netcl);
+			Mutex_Unlock(mtx_clients);
 
 			Session_LockFrames();
 
@@ -162,12 +165,12 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 			char dup = frame->_next && frame->_next->data == frame->data;
 			for (int i = 1; frame = frame->_next; i++)
 			{
-				data[0] = i;
+				data[1] = Net_htonl(i);
 				data[2] = Net_htonl(dup ? FrameFlag_Dup : FrameFlag_Insert);
 
 				Socket_Send(Client, (char*)framemsg, Net_ntohl(framemsg->length));
 
-				FrameItem* next = FrameList_Next(my_sesh._frames, frame);
+				FrameItem* next = frame->_next;
 				dup = next && next->data == frame->data;
 			}
 
@@ -202,17 +205,21 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 	case SessionMsg_UserChat:
 		if (user)
 		{
+			Session_LockUsers();
 			*(UID*)Msg->data = Net_htonl(user->id);
 			_Server_SendToAll(Msg);
+			Session_UnlockUsers();
 		}
 		break;
 	case SessionMsg_UserLeave:
 		if (user)
 		{
+			Session_LockUsers();
 			*(UID*)Msg->data = Net_htonl(user->id);
 			_Server_SendToAll(Msg);
 			Session_RemoveUser(user);
 			user = *pUser = 0;
+			Session_UnlockUsers();
 		}
 		break;
 	case SessionMsg_UserStrokeAdd:
@@ -221,6 +228,7 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 			break;
 
 		Session_LockUsers();
+		Session_LockFrames();
 
 		*(UID*)Msg->data = Net_htonl(user->id);
 
@@ -232,7 +240,6 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 
 		Vec2* netpoints = (Vec2*)next;
 
-		Session_LockFrames();
 		if (count > 0 && idxframe >= 0 && idxframe < Session_FrameCount())
 		{
 			if (!user->bDrawing)
@@ -291,9 +298,10 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 			break;
 
 		Session_LockUsers();
+		Session_LockFrames();
+
 		*(UID*)Msg->data = Net_htonl(user->id);
 
-		Session_LockFrames();
 		if (seshmsg == SessionMsg_UserStrokeUndo)
 			NetUser_UndoStroke(user);
 		else
@@ -307,14 +315,14 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 	break;
 	case SessionMsg_ChangedFPS:
 	{
-		int fps = Net_ntohl(*(int*)Msg->data);
+		/*int fps = Net_ntohl(*(int*)Msg->data);
 		if (fps < 0 || fps > 100)
 			break;
 
 		Session_LockFrames();
 		Session_SetFPS(fps);
 		_Server_SendToAll(Msg);
-		Session_UnlockFrames();
+		Session_UnlockFrames();*/
 	}
 	break;
 	/*case SessionMsg_SwitchedFrame:
@@ -336,6 +344,7 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 	case SessionMsg_ChangedFramelist:
 		if (user)
 		{
+			Session_LockUsers();
 			Session_LockFrames();
 			int* ints = (int*)Msg->data;
 			ints[0] = Net_htonl(user->id);
@@ -358,6 +367,24 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 				case FrameFlag_Remove:
 					if (idxframe < framecount)
 					{
+						char isUsed = 0;
+						FrameItem* frame = Session_GetFrame(idxframe);
+						for (BasicListItem* next = 0; next = BasicList_Next(my_sesh.users, next);)
+						{
+							NetUser* user = (NetUser*)next->data;
+							if (user->bDrawing)
+							{
+								UserStroke* stroke = (UserStroke*)user->strokes->tail->data;
+								if (stroke->framedat == frame->data)
+								{
+									isUsed = 1;
+									break;
+								}
+							}
+						}
+						if (isUsed)
+							break; // Don't remove frames while another broski is drawing on it. Saves them (and I) trouble
+
 						Session_RemoveFrame(idxframe, user);
 						valid = 1;
 					}
@@ -376,7 +403,19 @@ void _Server_ProcessMsg(SocketHandle Client, NetUser** pUser, NetMsg* Msg)
 					}
 				}
 			}
+
+			printf("[Server] FrameList: ");
+			for (FrameItem* frame = 0; frame = FrameList_Next(my_sesh._frames, frame);)
+			{
+				if (frame->_next && frame->_next->data == frame->data)
+					printf("-");
+				else
+					printf("o");
+			}
+			printf("\n");
+
 			Session_UnlockFrames();
+			Session_UnlockUsers();
 		}
 	break;
 	default:
@@ -429,10 +468,10 @@ int _Server_ClientThread(void* UserDat)
 		NetClient* netcl = (NetClient*)next->data;
 		if (netcl->sock == Client)
 		{
-			BasicList_Remove_FirstOf(list_clients, next->data);
+			BasicList_Remove_FirstOf(list_clients, netcl);
+			free(netcl);
 			break;
 		}
-		free(netcl);
 	}
 	Mutex_Unlock(mtx_clients);
 

@@ -92,6 +92,8 @@ char Session_InsertFrame(int Index, char bDup, NetUser* opt_User)
 	}
 
 	FrameList_Insert(my_sesh._frames, data, Index);
+	if (Index == my_sesh._index_active)
+		my_sesh._index_active++; // Inserting new frame here means shoving the current frame aside
 	my_sesh.on_seshmsg(SessionMsg_ChangedFramelist, opt_User ? opt_User->id : 0);
 	return 1;
 }
